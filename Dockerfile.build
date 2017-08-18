@@ -1,0 +1,36 @@
+#
+# A Build Docker Image for Compiling Go Binary
+#
+# Note: Please set volume to build
+#   e.g. docker run --rm -v "${PWD}":/go/src/github.com/newtonsystems/go-api-gateway <DOCKER_IMAGE>
+#
+FROM golang:1.8.3-alpine
+
+ENV REPO_DIR /go/src/github.com/newtonsystems/agent-mgmt
+
+WORKDIR $REPO_DIR
+
+
+RUN apk add --update --virtual .build-deps \
+        git \
+        bash \
+        curl \
+        ncurses \
+        build-base \
+        git \
+        musl-dev \
+        linux-headers \
+        make \
+        gcc \
+        g++ \
+        autoconf \
+        automake \
+        libtool \
+        inotify-tools \
+    && rm -rf /var/cache/apk/*
+
+RUN curl https://glide.sh/get | sh
+
+COPY . $REPO_DIR
+
+ENTRYPOINT ["make", "compile"]

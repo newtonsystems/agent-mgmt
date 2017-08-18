@@ -1,0 +1,122 @@
+#
+# Circle CI 2.0 Docs
+# 
+# For info, see: https://circleci.com/docs/2.0/
+#
+
+version: 2
+jobs:
+  build:
+    docker:
+      - image: newtonsystems/tools-docker-grpc-tools:0.2.3
+    environment:
+      DOCKER_PROJECT_NAME: agent-mgmt
+      TEST_REPORTS: /tmp/test-reports
+      CODECLIMATE_REPO_TOKEN: 9b5bddb06418a3c448e2b90c01dbd8e5ac5971a0da4dcb5cc4484dd79691f60d
+      PYTHON_PACKAGE_LOCATION: ~/
+      KUBECONFIG: ~/dev-utils/config/k8s/kube.config
+    working_directory: ~/agent-mgmt
+    steps:
+      - checkout
+      - setup_remote_docker
+
+      - run:
+          name: Clone docker-utils repo
+          command: |
+            cd ~/
+            git clone -b master git@github.com:newtonsystems/docker-utils.git
+
+      - run:
+          name: Clone dev-utils repo (Development utility scripts/tools)
+          command: |
+            cd ~/
+            git clone -b master https://github.com/newtonsystems/dev-utils.git
+
+      - run:
+          name: Clone devops repo (Update the submodule to the latest change)
+          command: |
+            cd ~/
+            git clone -b $CIRCLE_BRANCH https://github.com/newtonsystems/devops.git
+            cd devops
+            git submodule sync
+            git submodule update --init
+            git submodule foreach git pull origin $CIRCLE_BRANCH
+
+      # - run:
+      #     name: Run Regression Tests (send test coverage to code climate)
+      #     command: |
+      #       # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
+      #       ./config/bin/run_tests.sh --code-climate
+      #       mkdir -p $TEST_REPORTS
+      #       cp nosetests.xml $TEST_REPORTS/nosetests.xml
+
+      - run:
+          name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master)) 
+          command: |
+            # Cannot use volumes so we cant use 'make build-build'
+            docker build -t $DOCKER_PROJECT_NAME:compile -f Dockerfile.build .
+            docker run --name compiler $DOCKER_PROJECT_NAME:compile
+            docker cp compiler:/go/src/github.com/newtonsystems/agent-mgmt/main $PWD
+
+            docker build -t newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH .
+            docker login -u $DOCKER_USER -p $DOCKER_PASS
+            docker push newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+                docker tag newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH newtonsystems/$DOCKER_PROJECT_NAME:latest
+                docker push newtonsystems/$DOCKER_PROJECT_NAME:latest
+            fi
+
+      # Upload test results
+      - store_test_results:
+          path: /tmp/test-reports
+
+
+  # deploy_kubernetes_branch:
+  #   docker:
+  #     - image: newtonsystems/tools-docker-grpc-tools:0.2.3
+  #   environment:
+  #     DOCKER_PROJECT_NAME: agent-mgmt
+  #   working_directory: ~/agent-mgmt
+  #   steps:
+  #     - checkout
+  #     - setup_remote_docker
+
+  #     - run:
+  #         name: Clone dev-utils repo (Development utility scripts/tools)
+  #         command: |
+  #           cd ~/
+  #           git clone -b master https://github.com/newtonsystems/dev-utils.git
+
+  #     - run:
+  #         name: Clone devops repo (Update the submodule to the latest change)
+  #         command: |
+  #           cd ~/
+  #           git clone -b $CIRCLE_BRANCH https://github.com/newtonsystems/devops.git
+  #           cd devops
+  #           git submodule sync
+  #           git submodule update --init
+  #           git submodule foreach git pull origin $CIRCLE_BRANCH
+
+  #     - run: 
+  #         name: Update kubernetes image - agent-mgmt deployment
+  #         command: |
+  #           curl https://glide.sh/get | sh
+  #           mkdir -p $HOME/.kube
+  #           mv ~/dev-utils/config/k8s/kube.config $HOME/.kube/config
+  #           # trigger update
+  #           kubectl replace -f /root/devops/k8s/deploy/featuretest/agent-mgmt-deployment.yml --namespace $CIRCLE_BRANCH --record
+  #           kubectl rollout status deployment agent-mgmt --namespace $CIRCLE_BRANCH
+
+# workflows:
+#   version: 2
+#   dev_stage_envs:
+#     jobs:
+#       - build
+#       - deploy_kubernetes_branch:
+#           filters:
+#             branches:
+#               only: 
+#                 - featuretest
+#                 - master
+#           requires:
+#             - build
