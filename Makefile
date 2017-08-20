@@ -75,6 +75,7 @@ compile:
 	fi
 	make build-command
 
+
 build-command:
 	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./app/main.go
 
