@@ -60,7 +60,7 @@ help:                        ##@other Show this help.
 #
 # Compile + Go Dependencies Commands
 #
-.PHONY: compile update-deps-featuretest update-deps-master install-deps-featuretest install-deps-master
+.PHONY: compile update-deps-featuretest update-deps-master install-deps-featuretest install-deps-master add-deps-master add-deps-featuretest
 
 compile:
 	@echo "$(INFO) Getting packages and building alpine go binary ..."
@@ -114,7 +114,6 @@ build-bin:              ##@build Cross compile the go binary executable
 	docker build -t $(REPO):compile -f Dockerfile.build .
 	docker run --rm -v "${PWD}":$(REPO_DIR) $(REPO):compile
 	@echo ""
-
 
 #
 # Run Commands
@@ -179,7 +178,7 @@ serve: restart
 		done
 
 serve-fast: restart-fast
-	@inotifywait -r -m . -e create -e modify | \
+	@inotifywait -r -m $(GO_FILES) -e create -e modify | \
 		while read path action file; do \
 			echo "$(INFO) '$$file' has changed from dir '$$path' via '$$action'"; \
 			make restart-fast; \
@@ -217,11 +216,25 @@ run-latest:             ##@run-black-box Run the most up-to-date image for your 
 #
 # minikube
 #
-.PHONY: mkube-update
+.PHONY: mkube-update mkube-run-dev
 
 mkube-update: build-bin ##@kube Updates service in minikube
 	@echo "$(INFO) Deploying $(REPO):$(TIMESTAMP) by replacing image in kubernetes deployment config"
 	# TODO: add cluster check  - i.e. is minikube pointed at
-	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):$(TIMESTAMP) -f Dockerfile .
+	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):$(TIMESTAMP) .
 	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):$(TIMESTAMP)
+
+mkube-run-dev:         ##@kube Run service in minikube (hot-reload)
+	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
+	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
+	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
+	@echo "$(INFO) Hooking to logs in minikube ..."
+	@kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` &
+	# Add a liveness probe instead of sleep
+	@fswatch $(GO_FILES) | while read; do \
+			echo "$(INFO) Detected a change, deleting a pod to restart the service"; \
+			kubectl delete pod `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` ; \
+			sleep 20; \
+			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
+		done
 

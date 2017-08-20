@@ -34,4 +34,9 @@ import:
   subpackages:
   - prometheus
   - prometheus/promhttp
-- package: golang.org/x/net/context
+- package: golang.org/x/net
+  subpackages:
+  - context
+- package: gopkg.in/mgo.v2
+  subpackages:
+  - bson

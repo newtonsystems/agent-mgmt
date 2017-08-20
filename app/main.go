@@ -30,6 +30,9 @@ import (
 	"github.com/go-kit/kit/examples/shipping/location"
 	"github.com/go-kit/kit/examples/shipping/routing"
 	"github.com/go-kit/kit/examples/shipping/tracking"
+
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const (
@@ -57,6 +60,8 @@ func twiml(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var (
+		mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017", "address to mongo service")
+
 		addr  = envString("PORT", defaultPort)
 		rsurl = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
 
@@ -110,7 +115,7 @@ func main() {
 		return
 	}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan7")
+	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan9")
 	defer logger.Log("msg", "goodbye")
 
 	var (
@@ -220,6 +225,34 @@ func main() {
 		errs <- fmt.Errorf("%s", <-c)
 	}()
 
+	//main_mongo_test(logger)
+
+	session, err := mgo.Dial(*mongoAddr)
+	if err != nil {
+		logger := log.With(logger, "connection", "mongo")
+		logger.Log("fatal", err)
+		os.Exit(1)
+	}
+	defer session.Close()
+
+	// Optional. Switch the session to a monotonic behavior.
+	session.SetMode(mgo.Monotonic, true)
+
+	c := session.DB("test").C("people")
+	err = c.Insert(&Person{"Ale", "+55 53 8116 9639"},
+		&Person{"Cla", "+55 53 8402 8510"})
+	if err != nil {
+		logger.Log("msg", err)
+	}
+
+	result := Person{}
+	err = c.Find(bson.M{"name": "Ale"}).One(&result)
+	if err != nil {
+		logger.Log("msg", err)
+	}
+
+	fmt.Println("Phone:", result.Phone)
+
 	// // gRPC transport for access to any gRPC service.
 	// go func() {
 	// 	logger := log.With(logger, "msg", "Debug Any Service", "transport", "gRPC")
@@ -255,6 +288,37 @@ func accessControl(h http.Handler) http.Handler {
 
 		h.ServeHTTP(w, r)
 	})
+}
+
+type Person struct {
+	Name  string
+	Phone string
+}
+
+func main_mongo_test(logger log.Logger) {
+	session, err := mgo.Dial("mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017")
+	if err != nil {
+		panic(err)
+	}
+	defer session.Close()
+
+	// Optional. Switch the session to a monotonic behavior.
+	session.SetMode(mgo.Monotonic, true)
+
+	c := session.DB("test").C("people")
+	err = c.Insert(&Person{"Ale", "+55 53 8116 9639"},
+		&Person{"Cla", "+55 53 8402 8510"})
+	if err != nil {
+		logger.Log("msg", err)
+	}
+
+	result := Person{}
+	err = c.Find(bson.M{"name": "Ale"}).One(&result)
+	if err != nil {
+		logger.Log("msg", err)
+	}
+
+	fmt.Println("Phone:", result.Phone)
 }
 
 func envString(env, fallback string) string {
