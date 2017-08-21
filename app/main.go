@@ -115,7 +115,7 @@ func main() {
 		return
 	}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan9")
+	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan10")
 	defer logger.Log("msg", "goodbye")
 
 	var (
