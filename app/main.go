@@ -60,7 +60,7 @@ func twiml(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var (
-		mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017", "address to mongo service")
+		mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo.dev-common.svc.cluster.local,mongo-1.mongo.dev-common.svc.cluster.local,mongo-2.mongo.dev-common.svc.cluster.local:27017", "address to mongo service")
 
 		addr  = envString("PORT", defaultPort)
 		rsurl = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
