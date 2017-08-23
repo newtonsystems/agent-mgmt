@@ -107,7 +107,7 @@ jobs:
             kubectl replace -f /root/devops/k8s/deploy/featuretest/agent-mgmt-deployment.yml --namespace $CIRCLE_BRANCH --record
             kubectl rollout status deployment agent-mgmt --namespace $CIRCLE_BRANCH
             # Delete to repull image (restart)
-            kubectl delete pod `kubectl get pods -o wide --namespace $CIRCLE_BRANCH | grep $(REPO) | grep Running | cut -d ' ' -f1`  --namespace $CIRCLE_BRANCH
+            kubectl delete pod `kubectl get pods -o wide --namespace $CIRCLE_BRANCH | grep $DOCKER_PROJECT_NAME | grep Running | cut -d ' ' -f1`  --namespace $CIRCLE_BRANCH
             sleep 60
             # Add health check  (healthz)
 
