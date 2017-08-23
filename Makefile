@@ -235,7 +235,7 @@ mkube-run-dev:         ##@kube Run service in minikube (hot-reload)
 	@fswatch $(GO_FILES) | while read; do \
 			echo "$(INFO) Detected a change, deleting a pod to restart the service"; \
 			kubectl delete pod `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` ; \
-			sleep 20; \
+			sleep 15; \
 			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
 		done
 

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -60,7 +61,7 @@ func twiml(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var (
-		mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo.dev-common.svc.cluster.local,mongo-1.mongo.dev-common.svc.cluster.local,mongo-2.mongo.dev-common.svc.cluster.local:27017", "address to mongo service")
+		//mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017", "address to mongo service")
 
 		addr  = envString("PORT", defaultPort)
 		rsurl = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
@@ -225,55 +226,60 @@ func main() {
 		errs <- fmt.Errorf("%s", <-c)
 	}()
 
-	//main_mongo_test(logger)
-	logger.Log("msg", *mongoAddr)
-	session, err := mgo.Dial(*mongoAddr)
-	if err != nil {
-		logger := log.With(logger, "connection", "mongo")
-		logger.Log("fatal", err)
-		os.Exit(1)
+	errc := make(chan error, 2)
+
+	mongoHosts := []string{
+		"mongo-0.mongo:27017",
+		"mongo-1.mongo:27017",
+		"mongo-2.mongo:27017",
+		// dev environments for: master / featuretest
+		"mongo-0.mongo.dev-common.svc.cluster.local:27017",
+		"mongo-1.mongo.dev-common.svc.cluster.local:27017",
+		"mongo-2.mongo.dev-common.svc.cluster.local:27017",
 	}
-	defer session.Close()
+	const (
+		// TODO: Add auth to mongo
+		//	MongoUsername   = "YOUR_USERNAME"
+		//	MongoPassword   = "YOUR_PASS"
+		MongoDatabase = "Test"
+	//	Collection = "YOUR_COLLECTION"
+	)
+
+	// We need this object to establish a session to our MongoDB.
+	mongoDBDialInfo := &mgo.DialInfo{
+		Addrs:    mongoHosts,
+		Timeout:  60 * time.Second,
+		Database: MongoDatabase,
+		// TODO: Add auth to mongo
+		//Username: MongoUsername,
+		//Password: MongoPassword,
+	}
+
+	// -------------------------------------------------------------------- //
+
+	// Initialise mongodb connection
+	// Create a session which maintains a pool of socket connections to our MongoDB.
+	mongoLogger := log.With(logger, "connection", "mongo")
+	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "))
+	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
+
+	// Can't connect? - bail!
+	if err != nil {
+		errc <- err
+		mongoLogger.Log("exit", <-errc)
+		return
+	}
+
+	defer mongoSession.Close()
 
 	// Optional. Switch the session to a monotonic behavior.
-	session.SetMode(mgo.Monotonic, true)
+	mongoSession.SetMode(mgo.Monotonic, true)
+	mongoLogger.Log("msg", "successfully connected")
 
-	c := session.DB("test").C("people")
-	err = c.Insert(&Person{"Ale", "+55 53 8116 9639"},
-		&Person{"Cla", "+55 53 8402 8510"})
-	if err != nil {
-		logger.Log("msg", err)
-	}
+	// -------------------------------------------------------------------- //
 
-	result := Person{}
-	err = c.Find(bson.M{"name": "Ale"}).One(&result)
-	if err != nil {
-		logger.Log("msg", err)
-	}
-
-	fmt.Println("Phone:", result.Phone)
-
-	// // gRPC transport for access to any gRPC service.
-	// go func() {
-	// 	logger := log.With(logger, "msg", "Debug Any Service", "transport", "gRPC")
-
-	// 	ln, err := net.Listen("tcp", *gRPCAnyServiceAddr)
-	// 	if err != nil {
-	// 		errc <- err
-	// 		return
-	// 	}
-
-	// 	srv2 := addsvc.MakeAllServicesGRPCServer(endpoints, tracer, logger)
-	// 	s2 := grpc.NewServer()
-	// 	//pb.RegisterAddServer(s, srv)
-	// 	grpc_types.RegisterHelloServer(s2, srv2)
-	// 	grpc_types.RegisterWorldServer(s2, srv2)
-
-	// 	logger.Log("addr", *gRPCAnyServiceAddr)
-	// 	errc <- s2.Serve(ln)
-	// }()
-
-	logger.Log("terminated", <-errs)
+	// Run!
+	logger.Log("exit", <-errc)
 }
 
 func accessControl(h http.Handler) http.Handler {
