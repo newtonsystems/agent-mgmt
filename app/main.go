@@ -115,7 +115,7 @@ func main() {
 		return
 	}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan10")
+	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan11")
 	defer logger.Log("msg", "goodbye")
 
 	var (
@@ -226,7 +226,7 @@ func main() {
 	}()
 
 	//main_mongo_test(logger)
-
+	logger.Log("msg", *mongoAddr)
 	session, err := mgo.Dial(*mongoAddr)
 	if err != nil {
 		logger := log.With(logger, "connection", "mongo")
