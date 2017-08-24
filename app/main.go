@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	defaultMongoDatabase     = "db1"
 	defaultPort              = "50000"
 	defaultRoutingServiceURL = "http://localhost:7878"
 )
@@ -68,6 +69,8 @@ func main() {
 
 		httpAddr          = flag.String("http.addr", ":"+addr, "HTTP listen address")
 		routingServiceURL = flag.String("service.routing", rsurl, "routing service URL")
+
+		mongoDB = envString("MONGO_DB", defaultMongoDatabase)
 
 		ctx = context.Background()
 	)
@@ -237,19 +240,20 @@ func main() {
 		"mongo-1.mongo.dev-common.svc.cluster.local:27017",
 		"mongo-2.mongo.dev-common.svc.cluster.local:27017",
 	}
-	const (
-		// TODO: Add auth to mongo
-		//	MongoUsername   = "YOUR_USERNAME"
-		//	MongoPassword   = "YOUR_PASS"
-		MongoDatabase = "Test"
+
+	//const (
+	// TODO: Add auth to mongo
+	//	MongoUsername   = "YOUR_USERNAME"
+	//	MongoPassword   = "YOUR_PASS"
+	//MongoDatabase = mongoDB2
 	//	Collection = "YOUR_COLLECTION"
-	)
+	//)
 
 	// We need this object to establish a session to our MongoDB.
 	mongoDBDialInfo := &mgo.DialInfo{
 		Addrs:    mongoHosts,
 		Timeout:  60 * time.Second,
-		Database: MongoDatabase,
+		Database: mongoDB,
 		// TODO: Add auth to mongo
 		//Username: MongoUsername,
 		//Password: MongoPassword,
@@ -260,7 +264,7 @@ func main() {
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
 	mongoLogger := log.With(logger, "connection", "mongo")
-	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "))
+	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "), "db", mongoDB)
 	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
 
 	// Can't connect? - bail!
