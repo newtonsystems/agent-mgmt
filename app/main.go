@@ -119,7 +119,7 @@ func main() {
 		return
 	}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan11")
+	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan12")
 	defer logger.Log("msg", "goodbye")
 
 	var (
@@ -264,7 +264,8 @@ func main() {
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
 	mongoLogger := log.With(logger, "connection", "mongo")
-	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "), "db", mongoDB)
+	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "))
+	mongoLogger.Log("db", mongoDB)
 	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
 
 	// Can't connect? - bail!
