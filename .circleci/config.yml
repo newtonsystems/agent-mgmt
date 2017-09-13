@@ -16,9 +16,6 @@ jobs:
       PYTHON_PACKAGE_LOCATION: ~/
       KUBECONFIG: ~/dev-utils/config/k8s/kube.config
     working_directory: ~/agent-mgmt
-    branches:
-      ignore:
-        - /TG-.*/
     steps:
       - checkout
       - setup_remote_docker
