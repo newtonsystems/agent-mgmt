@@ -9,7 +9,7 @@ Available from docker hub as [newtonsystems/tools/agent-mgmt](https://hub.docker
 
 #### Supported tags and respective `Dockerfile` links
 
--    [`v0.2.2`, `v0.2.1`, `v0.2.0`, `latest` (/Dockerfile*)](https://github.com/newtonsystems/devops/blob/master/tools/agent-mgmt/Dockerfile)
+-    [`latest` (/Dockerfile*)](https://github.com/newtonsystems/devops/blob/master/tools/agent-mgmt/Dockerfile)
 
 # What is agent-mgmt?
 
