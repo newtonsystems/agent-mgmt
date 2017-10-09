@@ -17,6 +17,16 @@ import (
 
 var logger = utils.GetLogger()
 
+type nowFuncT func() time.Time
+
+var NowFunc nowFuncT
+
+func init() {
+	NowFunc = func() time.Time {
+		return time.Now()
+	}
+}
+
 // Service describes a service that adds things together.
 type Service interface {
 	Sum(ctx context.Context, a, b int) (int, error)
@@ -26,6 +36,7 @@ type Service interface {
 
 // New returns a basic Service with all of the expected middlewares wired in.
 func NewService(logger log.Logger, ints, chars metrics.Counter) Service {
+
 	var svc Service
 	{
 		svc = NewBasicService()
@@ -85,24 +96,23 @@ func TBD() {
 	// if err1 != nil {
 	// 	logger.Log("msg", err1)
 	// }
+	//c := session.DB(db).C("agents")
+	//c.Insert(&models.Agent{2, time.Now()})
+	// TODO: Local timezone
+	//var agents []models.Agent
+	//Limit(10)
+	//err := c.Find(bson.M{"lastheartbeat": bson.M{"$gt": minuteAgoDate}}).All(&agents)
 
 }
 
-// GetAvailablemodels.Agents implements Service.
 func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string) ([]string, error) {
 	// Find available agents from Mongo.
 	// models.Agents are considered available if the heartbeat has been received in
 	// the last minute (heartbeats should be every 30 secs)
-	logger.Log("level", "info", "msg", "Getting available agents from mongo")
+	logger.Log("level", "debug", "msg", "Getting available agents from mongo")
 
-	c := session.DB(db).C("agents")
-	c.Insert(&models.Agent{2, time.Now()})
-	// TODO: Local timezone
-	//var agents []models.Agent
-	minuteAgoDate := time.Now().Add(-time.Minute)
-
-	//Limit(10)
-	//err := c.Find(bson.M{"lastheartbeat": bson.M{"$gt": minuteAgoDate}}).All(&agents)
+	minuteAgoDate := NowFunc().Add(-time.Minute)
+	logger.Log("level", "debug", "msg", "Getting available agents with heartbeats no older than "+minuteAgoDate.Format("01/02/2006 03:04:05"))
 
 	var agentIDs []string
 	agents, err := session.DB(db).GetAgents(minuteAgoDate)
@@ -111,9 +121,11 @@ func (s basicService) GetAvailableAgents(_ context.Context, session models.Sessi
 		logger.Log("level", "err", "msg", "Failed to get agents", "err", err)
 		return agentIDs, err
 	}
+
 	logger.Log("level", "info", "msg", "Found "+strconv.Itoa(len(agents))+" available agents")
 	logger.Log("level", "debug", "query", fmt.Sprintf("%#v", agents))
 
+	// get agent ids only
 	for _, agent := range agents {
 		agentIDs = append(agentIDs, strconv.Itoa(int(agent.AgentID)))
 	}

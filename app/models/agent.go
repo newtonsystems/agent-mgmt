@@ -26,8 +26,7 @@ type Agent struct {
 func (db *MongoDatabase) GetAgents(timestamp time.Time) ([]Agent, error) {
 	var agents []Agent
 
-	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).All(&agents)
-	logger.Log("agents", agents)
+	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).Limit(10).All(&agents)
 
 	if err != nil {
 		return agents, err

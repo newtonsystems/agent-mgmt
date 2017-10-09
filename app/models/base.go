@@ -58,6 +58,7 @@ func (d MongoDatabase) C(name string) Collection {
 type DataLayer interface {
 	C(name string) Collection
 	GetAgents(timestamp time.Time) ([]Agent, error)
+	//Remove()
 	//GetQuestion(qid int) (Question, error)
 	//GetScores() ([]Score, error)
 	//FindTopScores() ([]Score, error)
@@ -70,6 +71,7 @@ type Session interface {
 	SetSyncTimeout(d time.Duration)
 	SetSocketTimeout(d time.Duration)
 	Close()
+	Refresh()
 	Copy() Session
 }
 
@@ -86,6 +88,17 @@ func (s MongoSession) DB(name string) DataLayer {
 // Copy mocks mgo.Session.Copy()
 func (s MongoSession) Copy() Session {
 	return MongoSession{s.Session.Copy()}
+}
+func (s MongoSession) Close() {
+	s.Session.Close()
+}
+
+func (s MongoSession) Refresh() {
+	s.Session.Refresh()
+}
+
+func (s MongoSession) SetSocketTimeout(d time.Duration) {
+	s.Session.SetSocketTimeout(d)
 }
 
 // NewMongoSession returns a new Mongo Session.
@@ -127,18 +140,24 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 }
 
 // PrepareDB ensure presence of persistent and immutable data in the DB.
-func PrepareDB(session Session, db string, logger log.Logger) {
+func PrepareDB(session MongoSession, db string, logger log.Logger) {
 	indexes := make(map[string]mgo.Index)
-	indexes["questions"] = mgo.Index{
-		Key:        []string{"qid", "sentence", "match_positions"},
+	// indexes["questions"] = mgo.Index{
+	// 	Key:        []string{"qid", "sentence", "match_positions"},
+	// 	Unique:     true,
+	// 	DropDups:   true,
+	// 	Background: false,
+	// }
+	// indexes["scores"] = mgo.Index{
+	// 	Key:        []string{"username"},
+	// 	Unique:     false,
+	// 	DropDups:   false,
+	// 	Background: false,
+	// }
+	indexes["agents"] = mgo.Index{
+		Key:        []string{"agentid"},
 		Unique:     true,
 		DropDups:   true,
-		Background: false,
-	}
-	indexes["scores"] = mgo.Index{
-		Key:        []string{"username"},
-		Unique:     false,
-		DropDups:   false,
 		Background: false,
 	}
 	for collectionName, index := range indexes {

@@ -5,7 +5,7 @@ package tests
 
 import (
 	"context"
-	"fmt"
+	//"fmt"
 	"testing"
 
 	"github.com/newtonsystems/agent-mgmt/app/service"
@@ -21,8 +21,8 @@ func TestAvailableAgentsReturnIDs(t *testing.T) {
 	Equals(t, []string{"1", "2"}, value)
 }
 
-func TestMongoConnection(t *testing.T) {
-	sess := CreateTestMongoConnection()
-	fmt.Printf("%s", sess)
-	defer sess.Close()
-}
+//func TestMongoConnection(t *testing.T) {
+//	sess := CreateTestMongoConnection()
+//	fmt.Printf("%s", sess)
+//	defer sess.Close()
+//}

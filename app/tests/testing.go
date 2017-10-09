@@ -6,6 +6,8 @@ package tests
 
 import (
 	"encoding/json"
+	stdlog "log"
+	"os"
 	//"fmt"
 	"io/ioutil"
 	//"os"
@@ -24,6 +26,14 @@ var logger = utils.GetLogger()
 const (
 	dataDir = "./testdata"
 )
+
+func envString(env, fallback string) string {
+	e := os.Getenv(env)
+	if e == "" {
+		return fallback
+	}
+	return e
+}
 
 // MockSession satisfies Session and act as a mock of *mgo.session.
 type MockSession struct{}
@@ -46,6 +56,8 @@ func (fs MockSession) Copy() models.Session {
 
 // Close mocks mgo.Session.Close().
 func (fs MockSession) Close() {}
+
+func (fs MockSession) Refresh() {}
 
 // DB mocks mgo.Session.DB().
 func (fs MockSession) DB(name string) models.DataLayer {
@@ -125,26 +137,27 @@ func (db MockDatabase) GetAgents(timestamp time.Time) ([]models.Agent, error) {
 	return agents, nil
 }
 
-// Create mongo connection for tests
+// Create a real mongo connection for tests
 // set to "test" database
-func CreateTestMongoConnection() models.Session {
+func CreateTestMongoConnection(debug bool) models.Session {
 	// Initialise mongodb connection and logger
 	// Create a session which maintains a pool of socket connections to our MongoDB.
+	var mongoExternalHost = envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017")
+
 	mongoHosts := []string{
-		"192.168.99.100:31017",
-		"localhost:27017",
-		"mongo-0.mongo:27017",
-		"mongo-1.mongo:27017",
-		"mongo-2.mongo:27017",
-		// dev environments for: master / featuretest
-		"mongo-0.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-1.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-2.mongo.dev-common.svc.cluster.local:27017",
+		mongoExternalHost,
 	}
 	mongoDBDialInfo := &mgo.DialInfo{
 		Addrs:    mongoHosts,
-		Timeout:  10 * time.Second,
+		Timeout:  20 * time.Second,
 		Database: "test",
+	}
+
+	if debug {
+		mgo.SetDebug(true)
+		var debugMongoLogger *stdlog.Logger
+		debugMongoLogger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+		mgo.SetLogger(debugMongoLogger)
 	}
 
 	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
@@ -155,14 +168,17 @@ func CreateTestMongoConnection() models.Session {
 	}
 
 	// Optional. Switch the session to a monotonic behavior.
-	mongoSession.SetMode(mgo.Monotonic, true)
+	//mongoSession.SetMode(mgo.Monotonic, true)
 
 	// Wrap mgo session in user defined interface/structs
 	// This means we can mock db calls more easily
 	session := models.MongoSession{mongoSession}
 	session.SetSafe(&mgo.Safe{})
-	session.SetSyncTimeout(3 * time.Second)
-	session.SetSocketTimeout(3 * time.Second)
+	session.SetSyncTimeout(7 * time.Second)
+	session.SetSocketTimeout(10 * time.Second)
+
+	// Prepare database
+	models.PrepareDB(session, "test", logger)
 
 	return session
 }
