@@ -1,5 +1,5 @@
-hash: cd38a7e12e44e48d897c4a8af59f2bb76179c87b803ed10d62fd56682930454f
-updated: 2017-08-20T00:23:37.636363397+01:00
+hash: 99c2213d8a966d813541a7cdf52ef04b36592d14f71a7d455642fb4cb5d8dfcb
+updated: 2017-09-19T19:50:11.582894408+01:00
 imports:
 - name: github.com/afex/hystrix-go
   version: 39520ddd07a9d9a071d615f7476798659f5a3b89
@@ -7,6 +7,10 @@ imports:
   - hystrix
   - hystrix/metric_collector
   - hystrix/rolling
+- name: github.com/apache/thrift
+  version: 0dd823580c78a79ae9696eb9b3650e400fff140f
+  subpackages:
+  - lib/go/thrift
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
   subpackages:
@@ -30,6 +34,8 @@ imports:
   - metrics
   - metrics/internal/lv
   - metrics/prometheus
+  - ratelimit
+  - tracing/opentracing
   - transport/grpc
   - transport/http
 - name: github.com/go-logfmt/logfmt
@@ -44,7 +50,9 @@ imports:
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
-  version: bcd8bc72b08df0f70df986b97f95590779502d31
+  version: 24fca303ac6da784b9e8269f724ddeb0b2eea5e7
+- name: github.com/juju/ratelimit
+  version: 5b9ff866471762aa2ab2dced63c9fb6f53921342
 - name: github.com/kr/logfmt
   version: b84e30acd515aadc4b783ad4ff83aff3299bdfe0
 - name: github.com/matttproud/golang_protobuf_extensions
@@ -52,17 +60,20 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/newtonsystems/grpc_types
-  version: 35d85c148c294797f8c2050489a7d76f07aa11a1
+  version: 39280b7066cba3aae8e2896a7b0b0d68b3f80489
   subpackages:
   - go/grpc_types
 - name: github.com/opentracing/opentracing-go
   version: 1949ddbfd147afd4d964a9f00b24eb291e0e7c38
   subpackages:
+  - ext
   - log
+- name: github.com/openzipkin/zipkin-go-opentracing
+  version: 9c88fa03bfdfaa5fec7cd1b40f3d10ec15c15fc6
 - name: github.com/pborman/uuid
   version: e790cca94e6cc75c7064b1332e63811d4aae1a53
 - name: github.com/prometheus/client_golang
-  version: c5b7fccd204277076155f10851dad72b76a49317
+  version: 967789050ba94deca04a5e84cce8ad472ce313c1
   subpackages:
   - prometheus
   - prometheus/promhttp

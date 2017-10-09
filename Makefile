@@ -82,13 +82,13 @@ build-command:
 update-deps-featuretest:
 	@echo "$(INFO) Updating dependencies for featuretest environment"
 	cp featuretest.lock glide.lock
-	glide -y featuretest.yaml update
+	glide -y featuretest.yaml update --force
 	cp glide.lock featuretest.lock
 
 update-deps-master:
 	@echo "$(INFO) Updating dependencies for $(BLUE)master$(RESET) environment"
 	cp master.lock glide.lock
-	glide -y master.yaml update
+	glide -y master.yaml update --force
 	cp glide.lock master.lock
 
 install-deps-featuretest:
@@ -151,6 +151,7 @@ run-dev: build-dev    ##@dev Build and run (hot-reload) development docker conta
 
 PID      = /tmp/$(REPO).pid
 GO_FILES = $(wildcard app/*.go)
+APP_DIR = app/
 APP      = ./main
 APP_MAIN = app/main.go
 
@@ -219,20 +220,23 @@ run-latest:             ##@run-black-box Run the most up-to-date image for your 
 #
 .PHONY: mkube-update mkube-run-dev
 
-mkube-update: build-bin ##@kube Updates service in minikube
+mkube-update: build-bin      ##@kube Updates service in minikube
 	@echo "$(INFO) Deploying $(REPO):$(TIMESTAMP) by replacing image in kubernetes deployment config"
 	# TODO: add cluster check  - i.e. is minikube pointed at
 	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):$(TIMESTAMP) .
 	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):$(TIMESTAMP)
 
-mkube-run-dev:         ##@kube Run service in minikube (hot-reload)
+mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
 	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
+	kubectl replace -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME)
 	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
+	make update-deps-master
+	make install-deps-master
 	@echo "$(INFO) Hooking to logs in minikube ..."
 	@kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` &
 	# Add a liveness probe instead of sleep
-	@fswatch $(GO_FILES) | while read; do \
+	@fswatch $(APP_DIR) | while read; do \
 			echo "$(INFO) Detected a change, deleting a pod to restart the service"; \
 			kubectl delete pod `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` ; \
 			sleep 15; \
