@@ -8,28 +8,21 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-
-	"google.golang.org/grpc"
 
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/term"
-	"github.com/go-kit/kit/metrics"
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
-	//"github.com/go-kit/kit/tracing/opentracing"
-	stdopentracing "github.com/opentracing/opentracing-go"
-	//zipkin "github.com/openzipkin/zipkin-go-opentracing"
 
-	//"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/examples/shipping/booking"
 	"github.com/go-kit/kit/examples/shipping/cargo"
 	"github.com/go-kit/kit/examples/shipping/handling"
@@ -39,36 +32,15 @@ import (
 	"github.com/go-kit/kit/examples/shipping/routing"
 	"github.com/go-kit/kit/examples/shipping/tracking"
 
-	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	//"github.com/newtonsystems/agent-mgmt/app"
-	"github.com/newtonsystems/agent-mgmt/app/endpoint"
-	"github.com/newtonsystems/agent-mgmt/app/models"
-	"github.com/newtonsystems/agent-mgmt/app/service"
-	"github.com/newtonsystems/agent-mgmt/app/transport"
 )
-
-//var MongoDatabase string
-//var MongoSession *mgo.Session
 
 const (
-	serviceName = "agent-mgmt"
-
 	defaultMongoDatabase     = "db1"
 	defaultPort              = "50000"
-	defaultDebugHTTPPort     = "8080"
 	defaultRoutingServiceURL = "http://localhost:7878"
-	defaultLinkerdHost       = "linkerd:4141"
-	defaultZipkinAddr        = "zipkin:9410"
 )
-
-type mgoDetails struct {
-	db      string
-	session models.Session
-}
-
-var MongoDetails mgoDetails
 
 type TwiML struct {
 	XMLName xml.Name `xml:"Response"`
@@ -90,17 +62,15 @@ func twiml(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var (
+		//mongoAddr = flag.String("debug.addr", "mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017", "address to mongo service")
+
 		addr  = envString("PORT", defaultPort)
 		rsurl = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
 
-		httpAddr          = flag.String("http.addr", ":"+defaultDebugHTTPPort, "HTTP listen address")
+		httpAddr          = flag.String("http.addr", ":"+addr, "HTTP listen address")
 		routingServiceURL = flag.String("service.routing", rsurl, "routing service URL")
 
-		mongoDB    = envString("MONGO_DB", defaultMongoDatabase)
-		mongoDebug = flag.Bool("mongo.debug", false, "Turns on mongo debug.")
-
-		// Other services
-		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Enable Zipkin tracing via a Zipkin HTTP Collector endpoint")
+		mongoDB = envString("MONGO_DB", defaultMongoDatabase)
 
 		ctx = context.Background()
 	)
@@ -293,115 +263,23 @@ func main() {
 
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
-	mongoSession, _ := models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
-	defer mongoSession.Close()
+	mongoLogger := log.With(logger, "connection", "mongo")
+	mongoLogger.Log("hosts", strings.Join(mongoHosts, ", "))
+	mongoLogger.Log("db", mongoDB)
+	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
 
-	//models.PrepareDB(mongoSession, mongoLogger)
-
-	// -------------------------------------------------------------------- //
-
-	// gRPC service / service metrics / endpoints / connect to linkerd
-
-	// Create the (sparse) metrics we'll use in the service. They, too, are
-	// dependencies that we pass to components that use them.
-	var ints, chars metrics.Counter
-	{
-		// Business-level metrics.
-		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "integers_summed",
-			Help:      "Total count of integers summed via the Sum method.",
-		}, []string{})
-		chars = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "characters_concatenated",
-			Help:      "Total count of characters concatenated via the Concat method.",
-		}, []string{})
-	}
-
-	var duration metrics.Histogram
-	{
-		// Transport level metrics.
-		duration = kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "main",
-			Name:      "request_duration_ns",
-			Help:      "Request duration in nanoseconds.",
-		}, []string{"method", "success"})
-	}
-
-	// Connect to local linkerd
-	linkerdLogger := log.With(logger, "connection", "linkerd")
-	// If address is incorrect retries forever at the moment
-	// https://github.com/grpc/grpc-go/issues/133
-	conn, err := grpc.Dial(defaultLinkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
+	// Can't connect? - bail!
 	if err != nil {
-		linkerdLogger.Log("msg", "Failed to connect to local linkerd", "level", "crit")
 		errc <- err
+		mongoLogger.Log("exit", <-errc)
 		return
 	}
-	defer conn.Close()
 
-	linkerdLogger.Log("host", defaultLinkerdHost, "msg", "successfully connected")
+	defer mongoSession.Close()
 
-	// Tracing domain.
-	var tracer stdopentracing.Tracer
-	{
-		if *zipkinAddr != "" {
-			logger := log.With(logger, "tracer", "Zipkin-gRPC")
-			logger.Log("addr", *zipkinAddr)
-
-			// // endpoint typically looks like: http://zipkinhost:9411/api/v1/spans
-			// collector, err := zipkin.NewHTTPCollector(*zipkinAddr)
-			// if err != nil {
-			// 	logger.Log("err", err)
-			// 	os.Exit(1)
-			// }
-			// defer collector.Close()
-
-			// tracer, err = zipkin.NewTracer(
-			// 	zipkin.NewRecorder(collector, false, "localhost:"+addr, serviceName),
-			// )
-			// if err != nil {
-			// 	logger.Log("err", err)
-			// 	os.Exit(1)
-			// }
-		} else {
-			logger := log.With(logger, "tracer", "none")
-			logger.Log()
-			tracer = stdopentracing.GlobalTracer() // no-op
-		}
-	}
-
-	MongoDetails.db = mongoDB
-	MongoDetails.session = mongoSession
-
-	var (
-		service   = service.NewService(logger, ints, chars, mongoSession, mongoDB)
-		endpoints = endpoint.NewEndpoint(service, logger, duration, tracer, mongoSession, mongoDB)
-	)
-
-	// gRPC transport
-	go func() {
-		gRPCLogger := log.With(logger, "transport", "gRPC")
-
-		gRPCLogger.Log("addr", addr, "port is avasdasailable")
-
-		ln, err := net.Listen("tcp", ":"+addr)
-		if err != nil {
-			errc <- err
-			return
-		}
-
-		gRPCLogger.Log("addr", addr, "port is available")
-
-		srv := transport.GRPCServer(endpoints, tracer, gRPCLogger)
-		s := grpc.NewServer()
-		grpc_types.RegisterAgentMgmtServer(s, srv)
-
-		errc <- s.Serve(ln)
-	}()
+	// Optional. Switch the session to a monotonic behavior.
+	mongoSession.SetMode(mgo.Monotonic, true)
+	mongoLogger.Log("msg", "successfully connected")
 
 	// -------------------------------------------------------------------- //
 
