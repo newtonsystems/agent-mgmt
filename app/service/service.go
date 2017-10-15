@@ -32,16 +32,17 @@ type Service interface {
 	Sum(ctx context.Context, a, b int) (int, error)
 	Concat(ctx context.Context, a, b string) (string, error)
 	GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error)
+	GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error)
 }
 
 // New returns a basic Service with all of the expected middlewares wired in.
-func NewService(logger log.Logger, ints, chars metrics.Counter) Service {
+func NewService(logger log.Logger, ints, chars, refs metrics.Counter) Service {
 
 	var svc Service
 	{
 		svc = NewBasicService()
 		svc = LoggingMiddleware(logger)(svc)
-		svc = InstrumentingMiddleware(ints, chars)(svc)
+		svc = InstrumentingMiddleware(ints, chars, refs)(svc)
 	}
 	return svc
 }
@@ -58,6 +59,10 @@ var (
 
 	// ErrMaxSizeExceeded protects the Concat method.
 	ErrMaxSizeExceeded = errors.New("result exceeds maximum size")
+
+	// ErrAgentIDNotFound if we cannot find an agent ID from an reference ID
+	ErrAgentIDNotFound = errors.New("failed to find an Agent from ref id")
+	//ErrAgentIDNotFound.metadata = metadata.
 )
 
 // NewBasicService returns a naïve, stateless implementation of Service.
@@ -103,6 +108,26 @@ func TBD() {
 	//Limit(10)
 	//err := c.Find(bson.M{"lastheartbeat": bson.M{"$gt": minuteAgoDate}}).All(&agents)
 
+}
+
+// TODO: Will need to create some sort of cleanup for the database?
+func (s basicService) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	// Get Agent ID from session data
+	logger.Log("level", "debug", "msg", "Getting available agent ID from ref ID: "+refID)
+
+	agentID, err := session.DB(db).GetAgentIDFromRef(refID)
+
+	if agentID == 0 {
+		logger.Log("level", "warn", "msg", "Failed to get agent ID from ref ID", "err", err)
+		return 0, ErrAgentIDNotFound
+	}
+
+	if err != nil {
+		logger.Log("level", "err", "msg", "Failed to get agent ID from ref ID", "err", err)
+		return 0, err
+	}
+
+	return agentID, err
 }
 
 func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string) ([]string, error) {

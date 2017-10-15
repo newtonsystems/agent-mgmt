@@ -137,12 +137,18 @@ func (db MockDatabase) GetAgents(timestamp time.Time) ([]models.Agent, error) {
 	return agents, nil
 }
 
+//GetAgentIDFromRef mocks models.GetAgents().
+func (db MockDatabase) GetAgentIDFromRef(refID string) (int32, error) {
+
+	return 0, nil
+}
+
 // Create a real mongo connection for tests
 // set to "test" database
 func CreateTestMongoConnection(debug bool) models.Session {
 	// Initialise mongodb connection and logger
 	// Create a session which maintains a pool of socket connections to our MongoDB.
-	var mongoExternalHost = envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017")
+	var mongoExternalHost = envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.101") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017")
 
 	mongoHosts := []string{
 		mongoExternalHost,

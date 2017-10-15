@@ -47,14 +47,23 @@ func (mw loggingMiddleware) GetAvailableAgents(ctx context.Context, session mode
 	return mw.next.GetAvailableAgents(ctx, session, db)
 }
 
+func (mw loggingMiddleware) GetAgentIDFromRef(session models.Session, db string, refID string) (v int32, err error) {
+	defer func() {
+		mw.logger.Log("method", "GetAgentIDFromRef", "agent_id", v, "err", err)
+	}()
+	return mw.next.GetAgentIDFromRef(session, db, refID)
+}
+
 // InstrumentingMiddleware returns a service middleware that instruments
 // the number of integers summed and characters concatenated over the lifetime of
 // the service.
-func InstrumentingMiddleware(ints, chars metrics.Counter) Middleware {
+// references asked for
+func InstrumentingMiddleware(ints, chars, refs metrics.Counter) Middleware {
 	return func(next Service) Service {
 		return instrumentingMiddleware{
 			ints:  ints,
 			chars: chars,
+			refs:  refs,
 			next:  next,
 		}
 	}
@@ -63,6 +72,7 @@ func InstrumentingMiddleware(ints, chars metrics.Counter) Middleware {
 type instrumentingMiddleware struct {
 	ints  metrics.Counter
 	chars metrics.Counter
+	refs  metrics.Counter
 	next  Service
 }
 
@@ -81,5 +91,11 @@ func (mw instrumentingMiddleware) Concat(ctx context.Context, a, b string) (stri
 func (mw instrumentingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error) {
 	v, err := mw.next.GetAvailableAgents(ctx, session, db)
 	mw.chars.Add(float64(len(v)))
+	return v, err
+}
+
+func (mw instrumentingMiddleware) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	v, err := mw.next.GetAgentIDFromRef(session, db, refID)
+	mw.refs.Add(1)
 	return v, err
 }
