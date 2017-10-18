@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	 //"google.golang.org/grpc/metadata"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -143,6 +144,7 @@ func TestGRPCClient(t *testing.T) {
 	// Connection to grpc server and create a client
 
 	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
+
 	defer conn.Close()
 	if err != nil {
 		t.Fatalf("unable to Dial: %+v", err)
@@ -150,6 +152,8 @@ func TestGRPCClient(t *testing.T) {
 	}
 
 	clientService := createTestClient(t, conn)
+
+
 
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
@@ -190,8 +194,15 @@ func checkClient(t *testing.T, session models.Session, client service.Service, s
 	}
 
 	ctx := context.Background()
-	resp, err := client.GetAvailableAgents(ctx, session, mongoDBDatabase)
-	logger.Log("resp", fmt.Sprintf("\n%#v", resp), "err", err)
+	//var header, trailer metadata.MD
+	resp, err := client.GetAvailableAgents(ctx, session, mongoDBDatabase,
+	//	grpc.Header(&header),    // will retrieve header
+    //grpc.Trailer(&trailer),  // will retrieve trailer)
+)
+	//md, ok := metadata.FromIncomingContext(ctx)
+
+
+	logger.Log("resp", fmt.Sprintf("\n%#v", resp), "err", err, "metadata", ctx)
 	if err != nil {
 		logger.Log("msg", "err is not nil")
 		s, ok := status.FromError(err)
@@ -201,7 +212,7 @@ func checkClient(t *testing.T, session models.Session, client service.Service, s
 		switch s.Code() {
 		case codes.Unknown:
 
-			logger.Log("msg", status.Errorf(codes.Internal, "client call: invalid argyemet %v", s), "errortype", ctx.Value(contextKey("errortype")))
+			logger.Log("msg", status.Errorf(codes.Internal, "client call: invalid argyemet %v", s), "errortype", "hj")
 		}
 	}
 }

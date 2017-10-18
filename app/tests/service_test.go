@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/kit/metrics"
 
+	agentmgmterrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
 	//"github.com/newtonsystems/agent-mgmt/app/utils"
@@ -99,7 +100,7 @@ var data = []entry{
 		"getagentidfromref_empty.input",
 		"getagentidfromref_empty.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is empty returned by service's GetAgentIDFromRef()",
-		service.ErrAgentIDNotFound,
+		agentmgmterrors.ErrAgentIDNotFoundError(""),
 	},
 	{
 		"getagentidfromref",
@@ -107,7 +108,7 @@ var data = []entry{
 		"getagentidfromref_wrongref.input",
 		"getagentidfromref_wrongref.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
-		service.ErrAgentIDNotFound,
+		agentmgmterrors.ErrAgentIDNotFoundError(""),
 	},
 	{
 		"heartbeat",
@@ -151,7 +152,7 @@ func insertAgentsIntoMongoFromInput(t *testing.T, session models.Session, srcFil
 
 }
 
-func testGetAvailableAgents(t *testing.T, source string, s service.Service, session models.Session, src []byte) ([]byte, error) {
+func tGetAvailableAgents(t *testing.T, source string, s service.Service, session models.Session, src []byte) ([]byte, error) {
 	var res []byte
 
 	insertAgentsIntoMongoFromInput(t, session, src, source)
@@ -165,7 +166,7 @@ func testGetAvailableAgents(t *testing.T, source string, s service.Service, sess
 	return res, err
 }
 
-func testGetAgentIDFromRef(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
+func tGetAgentIDFromRef(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
 	var phoneSessions []models.PhoneSession
 	json.Unmarshal(src, &phoneSessions)
 
@@ -194,7 +195,7 @@ func testGetAgentIDFromRef(t *testing.T, source string, s service.Service, srvTe
 	return res, err
 }
 
-func testHeartBeat(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
+func tHeartBeat(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
 	var res []byte
 
 	insertAgentsIntoMongoFromInput(t, session, src, source)
@@ -282,11 +283,11 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 	var res []byte
 	var srvError error
 	if srvTestCase == "getavailableagents" {
-		res, srvError = testGetAvailableAgents(t, source, srv, session, src)
+		res, srvError = tGetAvailableAgents(t, source, srv, session, src)
 	} else if srvTestCase == "getagentidfromref" {
-		res, srvError = testGetAgentIDFromRef(t, source, srv, srvTestArgs, session, src)
+		res, srvError = tGetAgentIDFromRef(t, source, srv, srvTestArgs, session, src)
 	} else if srvTestCase == "heartbeat" {
-		res, srvError = testHeartBeat(t, source, srv, srvTestArgs, session, src)
+		res, srvError = tHeartBeat(t, source, srv, srvTestArgs, session, src)
 	} else {
 		t.Error("test service call name '" + srvTestCase + "' is unknown")
 		return
