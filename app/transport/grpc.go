@@ -5,6 +5,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-kit/kit/log"
 	//"github.com/go-kit/kit/tracing/opentracing"
@@ -15,6 +16,13 @@ import (
 	"github.com/newtonsystems/agent-mgmt/app/endpoint"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
 )
+
+func str2err(s string) error {
+	if s == "" {
+		return nil
+	}
+	return errors.New(s)
+}
 
 func GRPCServer(endpoints endpoint.Set, tracer stdopentracing.Tracer, logger log.Logger) grpc_types.AgentMgmtServer {
 	//options := []grpctransport.ServerOption{
@@ -97,6 +105,24 @@ func EncodeGRPCGetAvailableAgentsResponse(_ context.Context, response interface{
 	resp := response.(endpoint.GetAvailableAgentsResponse)
 	return &grpc_types.GetAvailableAgentsResponse{AgentIds: resp.AgentIds}, nil
 }
+
+// -- GetAvailableAgents() Client functions
+
+// EncodeGRPCGetAvailableAgentsRequest is a transport/grpc.EncodeRequestFunc that converts a
+// user-domain sum request to a gRPC sum request. Primarily useful in a client.
+func EncodeGRPCGetAvailableAgentsRequest(_ context.Context, request interface{}) (interface{}, error) {
+	req := request.(endpoint.GetAvailableAgentsRequest)
+	return &grpc_types.GetAvailableAgentsRequest{Limit: int32(req.Limit)}, nil
+}
+
+// DecodeGRPCGetAvailableAgentsResponse is a transport/grpc.DecodeResponseFunc that converts a
+// gRPC sum reply to a user-domain sum response. Primarily useful in a client.
+func DecodeGRPCGetAvailableAgentsResponse(_ context.Context, grpcReply interface{}) (interface{}, error) {
+	reply := grpcReply.(*grpc_types.GetAvailableAgentsResponse)
+	return endpoint.GetAvailableAgentsResponse{AgentIds: reply.AgentIds}, nil //grpc.Errorf(codes.InvalidArgument, "Ouch!") //, Err: str2err(reply.Err)}, nil
+}
+
+// ------------------------------------------------------------------------ //
 
 // GetAgentIDFromRef()
 

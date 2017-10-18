@@ -109,6 +109,14 @@ var data = []entry{
 		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
 		service.ErrAgentIDNotFound,
 	},
+	{
+		"heartbeat",
+		"20",
+		"heartbeat.input",
+		"heartbeat.golden",
+		"A basic test of service's HeartBeat()",
+		nil,
+	},
 }
 
 func clearAgentsCollection(sess models.Session) {
@@ -117,14 +125,17 @@ func clearAgentsCollection(sess models.Session) {
 	sess.DB("test").C("phonesessions").RemoveAll(i)
 }
 
-func testGetAvailableAgents(t *testing.T, source string, s service.Service, session models.Session, src []byte) ([]byte, error) {
+func insertAgentsIntoMongoFromInput(t *testing.T, session models.Session, srcFile []byte, source string) {
 	var agents []models.Agent
-	json.Unmarshal(src, &agents)
 
+	// Unmarshal JSON From File
+	json.Unmarshal(srcFile, &agents)
+
+	// Check we have found some input
 	if len(agents) == 0 {
 		var errMessage = "No input data found from " + source
-		logger.Log("info", "crit", "msg", errMessage)
 		_, file, line, _ := runtime.Caller(1)
+		logger.Log("info", "crit", "msg", errMessage)
 		fmt.Printf("\033[31m%s:%d: unexpected error: %s\033[39m\n\n", filepath.Base(file), line, errMessage)
 		t.FailNow()
 	}
@@ -137,12 +148,18 @@ func testGetAvailableAgents(t *testing.T, source string, s service.Service, sess
 			t.Error(err1)
 		}
 	}
+
+}
+
+func testGetAvailableAgents(t *testing.T, source string, s service.Service, session models.Session, src []byte) ([]byte, error) {
 	var res []byte
 
-	res_s, err := s.GetAvailableAgents(context.Background(), session, "test")
+	insertAgentsIntoMongoFromInput(t, session, src, source)
+
+	agentIDs, err := s.GetAvailableAgents(context.Background(), session, "test")
 
 	// Convert to bytes for possible writing
-	resString := strings.Join(res_s, ", ")
+	resString := strings.Join(agentIDs, ", ")
 	res = []byte(resString)
 
 	return res, err
@@ -177,6 +194,25 @@ func testGetAgentIDFromRef(t *testing.T, source string, s service.Service, srvTe
 	return res, err
 }
 
+func testHeartBeat(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
+	var res []byte
+
+	insertAgentsIntoMongoFromInput(t, session, src, source)
+
+	agentID, err := strconv.Atoi(srvTestArgs)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	agent := models.Agent{AgentID: int32(agentID)}
+	status, err := s.HeartBeat(session, "test", agent)
+	res = []byte(strconv.Itoa(int(status)))
+
+	return res, err
+}
+
 func TestFiles(t *testing.T) {
 
 	// Initialise mongo connection
@@ -193,7 +229,7 @@ func TestFiles(t *testing.T) {
 	// TODO: Create a Mock Version or fix this
 	// (Not a priority at the moment)
 
-	var ints, chars, refs metrics.Counter
+	var ints, chars, refs, beats metrics.Counter
 	{
 		// Business-level metrics.
 		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
@@ -214,10 +250,16 @@ func TestFiles(t *testing.T) {
 			Name:      "references_used",
 			Help:      "Total count of references used to get agent ID via the GetAgentIDFromRef method.",
 		}, []string{})
+		beats = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "agentmgmt",
+			Name:      "total_heartbeat_counts",
+			Help:      "Total count of heartbeats service call from the HeartBeat method.",
+		}, []string{})
 	}
 
 	// Create new service
-	s := service.NewService(logger, ints, chars, refs)
+	s := service.NewService(logger, ints, chars, refs, beats)
 
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
@@ -243,6 +285,8 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 		res, srvError = testGetAvailableAgents(t, source, srv, session, src)
 	} else if srvTestCase == "getagentidfromref" {
 		res, srvError = testGetAgentIDFromRef(t, source, srv, srvTestArgs, session, src)
+	} else if srvTestCase == "heartbeat" {
+		res, srvError = testHeartBeat(t, source, srv, srvTestArgs, session, src)
 	} else {
 		t.Error("test service call name '" + srvTestCase + "' is unknown")
 		return

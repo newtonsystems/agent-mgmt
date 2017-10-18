@@ -293,10 +293,10 @@ func main() {
 
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
-	mongoSession, _ := models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
+	mongoSession, mongoLogger := models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
 	defer mongoSession.Close()
 
-	//models.PrepareDB(mongoSession, mongoLogger)
+	models.PrepareDB(mongoSession, mongoDB, mongoLogger)
 
 	// -------------------------------------------------------------------- //
 
@@ -304,7 +304,8 @@ func main() {
 
 	// Create the (sparse) metrics we'll use in the service. They, too, are
 	// dependencies that we pass to components that use them.
-	var ints, chars metrics.Counter
+	// TODO: change namespace
+	var ints, chars, refs, beats metrics.Counter
 	{
 		// Business-level metrics.
 		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
@@ -318,6 +319,18 @@ func main() {
 			Subsystem: "addsvc",
 			Name:      "characters_concatenated",
 			Help:      "Total count of characters concatenated via the Concat method.",
+		}, []string{})
+		refs = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "agentmgmt",
+			Name:      "references_used",
+			Help:      "Total count of references used to get agent ID via the GetAgentIDFromRef method.",
+		}, []string{})
+		beats = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "agentmgmt",
+			Name:      "total_heartbeat_counts",
+			Help:      "Total count of heartbeats service call from the HeartBeat method.",
 		}, []string{})
 	}
 
@@ -378,7 +391,7 @@ func main() {
 	MongoDetails.session = mongoSession
 
 	var (
-		service   = service.NewService(logger, ints, chars, mongoSession, mongoDB)
+		service   = service.NewService(logger, ints, chars, refs, beats)
 		endpoints = endpoint.NewEndpoint(service, logger, duration, tracer, mongoSession, mongoDB)
 	)
 

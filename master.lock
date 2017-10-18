@@ -1,5 +1,5 @@
 hash: 99c2213d8a966d813541a7cdf52ef04b36592d14f71a7d455642fb4cb5d8dfcb
-updated: 2017-10-11T21:19:22.669393438+01:00
+updated: 2017-10-16T19:40:35.617829+01:00
 imports:
 - name: github.com/afex/hystrix-go
   version: f118cd938f786d24f46cc307981d8f63b7951020
@@ -60,7 +60,7 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/newtonsystems/grpc_types
-  version: 1c7894ddac10c8cf030184977b64891c918b2e57
+  version: 8e2dd972b8f899b37166e2d45ce80ba8e1a63633
   subpackages:
   - go/grpc_types
 - name: github.com/opentracing/opentracing-go
@@ -73,7 +73,7 @@ imports:
 - name: github.com/pborman/uuid
   version: e790cca94e6cc75c7064b1332e63811d4aae1a53
 - name: github.com/prometheus/client_golang
-  version: 967789050ba94deca04a5e84cce8ad472ce313c1
+  version: c5b7fccd204277076155f10851dad72b76a49317
   subpackages:
   - prometheus
   - prometheus/promhttp

@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/kit/metrics"
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
+	"github.com/newtonsystems/grpc_types/go/grpc_types"
 )
 
 // Middleware describes a service (as opposed to endpoint) middleware.
@@ -54,16 +55,25 @@ func (mw loggingMiddleware) GetAgentIDFromRef(session models.Session, db string,
 	return mw.next.GetAgentIDFromRef(session, db, refID)
 }
 
+func (mw loggingMiddleware) HeartBeat(session models.Session, db string, agent models.Agent) (status grpc_types.HeartBeatResponse_HeartBeatStatus, err error) {
+	defer func() {
+		mw.logger.Log("method", "HeartBeat", "agent_id", agent.AgentID, "status", status)
+	}()
+	return mw.next.HeartBeat(session, db, agent)
+}
+
 // InstrumentingMiddleware returns a service middleware that instruments
 // the number of integers summed and characters concatenated over the lifetime of
 // the service.
 // references asked for
-func InstrumentingMiddleware(ints, chars, refs metrics.Counter) Middleware {
+// The number of heartbeats counted ()
+func InstrumentingMiddleware(ints, chars, refs, beats metrics.Counter) Middleware {
 	return func(next Service) Service {
 		return instrumentingMiddleware{
 			ints:  ints,
 			chars: chars,
 			refs:  refs,
+			beats: beats,
 			next:  next,
 		}
 	}
@@ -73,6 +83,7 @@ type instrumentingMiddleware struct {
 	ints  metrics.Counter
 	chars metrics.Counter
 	refs  metrics.Counter
+	beats metrics.Counter
 	next  Service
 }
 
@@ -98,4 +109,10 @@ func (mw instrumentingMiddleware) GetAgentIDFromRef(session models.Session, db s
 	v, err := mw.next.GetAgentIDFromRef(session, db, refID)
 	mw.refs.Add(1)
 	return v, err
+}
+
+func (mw instrumentingMiddleware) HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+	status, err := mw.next.HeartBeat(session, db, agent)
+	mw.beats.Add(1)
+	return status, err
 }

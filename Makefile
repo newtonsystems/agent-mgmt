@@ -1,7 +1,7 @@
 #
 # Makefile
 #
-# Phone Channel 
+# Phone Channel
 # TODO: Need some sort of generic makefile for go services
 #
 
@@ -80,12 +80,14 @@ build-command:
 	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./app/main.go
 
 update-deps-featuretest:
+	rm -rf ./.glide
 	@echo "$(INFO) Updating dependencies for featuretest environment"
 	cp featuretest.lock glide.lock
 	glide -y featuretest.yaml update --force
 	cp glide.lock featuretest.lock
 
 update-deps-master:
+	rm -rf ./.glide
 	@echo "$(INFO) Updating dependencies for $(BLUE)master$(RESET) environment"
 	cp master.lock glide.lock
 	glide -y master.yaml update --force
@@ -228,7 +230,7 @@ mkube-update: build-bin      ##@kube Updates service in minikube
 
 mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
-	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
+	@docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
 	kubectl replace -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME)
 	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
 	make update-deps-master
@@ -242,4 +244,3 @@ mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 			sleep 15; \
 			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
 		done
-

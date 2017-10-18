@@ -59,6 +59,7 @@ type DataLayer interface {
 	C(name string) Collection
 	GetAgents(timestamp time.Time) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
+	HeartBeat(agentID int32) error
 	//Remove()
 	//GetQuestion(qid int) (Question, error)
 	//GetScores() ([]Score, error)
