@@ -66,30 +66,32 @@ func WrapError(ctx context.Context, err error) error {
 // with wrapError to their proper internal error type. If the provided metadata
 // object has an "errortype" field, that will be used to set the type of the
 // error.
-// func unwrapError(err error, md metadata.MD) error {
-// 	if err == nil {
-// 		return nil
-// 	}
-// 	if errTypeStrs, ok := md["errortype"]; ok {
-// 		unwrappedErr := grpc.ErrorDesc(err)
-// 		if len(errTypeStrs) != 1 {
-// 			return berrors.InternalServerError(
-// 				"multiple errorType metadata, wrapped error %q",
-// 				unwrappedErr,
-// 			)
-// 		}
-// 		errType, decErr := strconv.Atoi(errTypeStrs[0])
-// 		if decErr != nil {
-// 			return berrors.InternalServerError(
-// 				"failed to decode error type, decoding error %q, wrapped error %q",
-// 				decErr,
-// 				unwrappedErr,
-// 			)
-// 		}
-// 		return berrors.New(berrors.ErrorType(errType), unwrappedErr)
-// 	}
-// 	return err
-// }
+func UnWrapError(err error, md metadata.MD) error {
+	if err == nil {
+		return nil
+	}
+	if errTypeStrs, ok := md["errortype"]; ok {
+
+		unwrappedErr := grpc.ErrorDesc(err)
+		if len(errTypeStrs) != 1 {
+			return amerrors.InternalServerError(
+				"multiple errorType metadata, wrapped error %q",
+				unwrappedErr,
+			)
+		}
+
+		errType, decErr := strconv.Atoi(errTypeStrs[0])
+		if decErr != nil {
+			return amerrors.InternalServerError(
+				"failed to decode error type, decoding error %q, wrapped error %q",
+				decErr,
+				unwrappedErr,
+			)
+		}
+		return amerrors.New(amerrors.ErrorType(errType), unwrappedErr)
+	}
+	return err
+}
 
 // New returns a basic Service with all of the expected middlewares wired in.
 func NewService(logger log.Logger, ints, chars, refs, beats metrics.Counter) Service {

@@ -14,6 +14,13 @@ import (
 	"testing"
 )
 
+// FailNowAt is a helper function to display more information on a Fail Now
+func FailNowAt(t *testing.T, msg string) {
+	_, file, line, _ := runtime.Caller(1)
+	fmt.Printf("\033[31m%s:%d: unexpected error: %s\033[39m\n\n", filepath.Base(file), line, msg)
+	t.FailNow()
+}
+
 // Assert fails the test if the condition is false.
 func Assert(tb testing.TB, condition bool, msg string, v ...interface{}) {
 	if !condition {

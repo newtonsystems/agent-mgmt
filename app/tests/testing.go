@@ -147,6 +147,11 @@ func (db MockDatabase) HeartBeat(agentID int32) error {
 	return nil
 }
 
+//DropDatabase mocks db.DropDatabase().
+func (db MockDatabase) DropDatabase() error {
+	return nil
+}
+
 // Create a real mongo connection for tests
 // set to "test" database
 func CreateTestMongoConnection(debug bool) models.Session {

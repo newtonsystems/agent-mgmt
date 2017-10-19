@@ -60,6 +60,7 @@ type DataLayer interface {
 	GetAgents(timestamp time.Time) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
 	HeartBeat(agentID int32) error
+	DropDatabase() error
 	//Remove()
 	//GetQuestion(qid int) (Question, error)
 	//GetScores() ([]Score, error)
