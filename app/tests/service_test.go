@@ -4,10 +4,8 @@ package tests
 // gracefully ripped from https://github.com/hashicorp/hcl/blob/master/hcl/printer/printer_test.go
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -23,7 +21,7 @@ import (
 
 	"github.com/go-kit/kit/metrics"
 
-	agentmgmterrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
 	//"github.com/newtonsystems/agent-mgmt/app/utils"
@@ -100,7 +98,7 @@ var data = []entry{
 		"getagentidfromref_empty.input",
 		"getagentidfromref_empty.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is empty returned by service's GetAgentIDFromRef()",
-		agentmgmterrors.ErrAgentIDNotFoundError(""),
+		amerrors.ErrAgentIDNotFoundError(""),
 	},
 	{
 		"getagentidfromref",
@@ -108,7 +106,7 @@ var data = []entry{
 		"getagentidfromref_wrongref.input",
 		"getagentidfromref_wrongref.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
-		agentmgmterrors.ErrAgentIDNotFoundError(""),
+		amerrors.ErrAgentIDNotFoundError(""),
 	},
 	{
 		"heartbeat",
@@ -320,46 +318,4 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 		t.Error(err)
 		return
 	}
-}
-
-// diff compares a and b.
-func diff(aname, bname, desc string, a, b []byte) error {
-	var buf bytes.Buffer // holding long error message
-
-	// compare lengths
-	if len(a) != len(b) {
-		fmt.Fprintf(&buf, "\nlength changed: len(%s) = %d, len(%s) = %d", aname, len(a), bname, len(b))
-	}
-
-	// compare contents
-	line := 1
-	offs := 0
-	for i := 0; i < len(a) && i < len(b); i++ {
-		ch := a[i]
-		if ch != b[i] {
-			fmt.Fprintf(&buf, "\n%s:%d:%d: %q", aname, line, i-offs+1, lineAt(a, offs))
-			fmt.Fprintf(&buf, "\n%s:%d:%d: %q", bname, line, i-offs+1, lineAt(b, offs))
-			fmt.Fprintf(&buf, "\n\n")
-			break
-		}
-		if ch == '\n' {
-			line++
-			offs = i + 1
-		}
-	}
-
-	if buf.Len() > 0 {
-		fmt.Fprintf(&buf, "\n%s\n", desc)
-		return errors.New(buf.String())
-	}
-	return nil
-}
-
-// lineAt returns the line in text starting at offset offs.
-func lineAt(text []byte, offs int) []byte {
-	i := offs
-	for i < len(text) && text[i] != '\n' {
-		i++
-	}
-	return text[offs:i]
 }

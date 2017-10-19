@@ -2,16 +2,21 @@ package main_test
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/kit/endpoint"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
-	appendpoint "github.com/newtonsystems/agent-mgmt/app/endpoint"
+	amendpoint "github.com/newtonsystems/agent-mgmt/app/endpoint"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
 	"github.com/newtonsystems/agent-mgmt/app/tests"
@@ -20,8 +25,8 @@ import (
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	 //"google.golang.org/grpc/metadata"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -33,7 +38,13 @@ const (
 	dataDir = "./testdata"
 )
 
+type testRequest interface {
+}
+
 type entry struct {
+	testName    string
+	testArgs    testRequest
+	testHasErr  error
 	source      string
 	golden      string
 	description string
@@ -41,12 +52,12 @@ type entry struct {
 
 var data = []entry{
 	{
-		//"getavailableagents",
-		//"",
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{},
+		nil,
 		"getavailableagents.input",
 		"getavailableagents.golden",
 		"A basic test of service's GetAvailableAgents()",
-		//nil,
 	},
 }
 
@@ -65,7 +76,7 @@ func createTestServer(t *testing.T) {
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
 	var (
 		service   = service.NewService(nil, nil, nil, nil, nil)
-		endpoints = appendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
+		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
 	)
 
 	// gRPC server
@@ -106,7 +117,7 @@ func createTestClient(t *testing.T, conn *grpc.ClientConn) service.Service {
 		).Endpoint()
 	}
 
-	return appendpoint.Set{
+	return amendpoint.Set{
 		GetAvailableAgentsEndpoint: getAvailableAgentsEndpoint,
 		GetAgentIDFromRefEndpoint:  getAgentIDFromRefEndpoint,
 	}
@@ -122,7 +133,7 @@ func TestGRPCClient(t *testing.T) {
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
 	var (
 		service   = service.NewService(nil, nil, nil, nil, nil)
-		endpoints = appendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
+		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
 	)
 
 	// gRPC server
@@ -151,15 +162,13 @@ func TestGRPCClient(t *testing.T) {
 		t.FailNow()
 	}
 
-	clientService := createTestClient(t, conn)
-
-
+	client := grpc_types.NewAgentMgmtClient(conn)
 
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
-			checkClient(t, moSession, clientService, source, golden, e.description)
+			checkClientCall(t, client, moSession, source, golden, e.description, e.testName, e.testArgs, e.testHasErr)
 		})
 		//clearAgentsCollection(moSession)
 	}
@@ -185,7 +194,142 @@ func TestGRPCClient(t *testing.T) {
 
 }
 
-func checkClient(t *testing.T, session models.Session, client service.Service, source, golden string, description string) {
+// Convert to bytes for possible writing
+func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer metadata.MD, testName string, testArgs testRequest) ([]byte, error) {
+	var res []byte
+	var resErr error
+	ctx := context.Background()
+
+	switch testName {
+	case "getavailableagents":
+		request, ok := testArgs.(*grpc_types.GetAvailableAgentsRequest)
+		if !ok {
+			t.Error("Failed to convert request. This shouldnt happen ...")
+			t.FailNow()
+		}
+		resp, err := client.GetAvailableAgents(
+			ctx,
+			request,
+			grpc.Header(&header),
+			grpc.Trailer(&trailer),
+		)
+		if err != nil {
+			//res = []byte()
+			resErr = err
+			logger.Log("msg", fmt.Sprintf("\n%#v", resp))
+
+		} else {
+			res = []byte(strings.Join(resp.AgentIds, ", "))
+			resErr = err
+		}
+
+	case "getagentidfromref":
+		resp, err := client.GetAgentIDFromRef(
+			ctx,
+			&grpc_types.GetAgentIDFromRefRequest{RefId: "hsajdhjas"},
+			grpc.Header(&header),
+			grpc.Trailer(&trailer),
+		)
+		res = []byte(strconv.Itoa(int(resp.AgentId)))
+		resErr = err
+
+	case "heartbeat":
+		resp, err := client.HeartBeat(
+			ctx,
+			&grpc_types.HeartBeatRequest{},
+			grpc.Header(&header),
+			grpc.Trailer(&trailer),
+		)
+		res = []byte(strconv.Itoa(int(resp.Status)))
+		resErr = err
+
+	}
+
+	return res, resErr
+}
+
+// Unmarshal JSON From File
+func insertFixtureToDatabase(t *testing.T, session models.Session, testName, source string, src []byte) {
+	switch testName {
+	case "getavailableagents":
+		var agents []models.Agent
+		json.Unmarshal(src, &agents)
+
+		// Check we have found some input
+		if len(agents) == 0 {
+			var errMessage = "No input data found from " + source
+			_, file, line, _ := runtime.Caller(1)
+			logger.Log("info", "crit", "msg", errMessage)
+			fmt.Printf("\033[31m%s:%d: unexpected error: %s\033[39m\n\n", filepath.Base(file), line, errMessage)
+			t.FailNow()
+		}
+
+		// Insert into mongo
+		for _, agent := range agents {
+			err1 := session.DB("test").C("agents").Insert(agent)
+			if err1 != nil {
+				logger.Log("msg", "Could not insert input into mongo", "err", err1)
+				t.Error(err1)
+			}
+		}
+
+	case "getagentidfromref":
+		var phoneSessions []models.PhoneSession
+		json.Unmarshal(src, &phoneSessions)
+
+	case "heartbeat":
+
+	}
+}
+
+func checkClientCall(t *testing.T, client grpc_types.AgentMgmtClient, session models.Session, source, golden, description, testName string, testArgs testRequest, testHasErr error) {
+	// read input from file
+	src, err := ioutil.ReadFile(source)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// update mongo db with input data
+	insertFixtureToDatabase(t, session, testName, source, src)
+
+	// run service call
+	var header, trailer metadata.MD
+	res, err := runSrvTest(t, client, header, trailer, testName, testArgs)
+
+	// is an error is expected? If so, we check it is the correct one
+	if err != nil {
+		if testHasErr != nil && err != testHasErr {
+			t.Error(err)
+			t.FailNow()
+		}
+	}
+
+	// update golden files if necessary
+	if *update {
+		if werr := ioutil.WriteFile(golden, res, 0644); werr != nil {
+			t.Error(err)
+		}
+		return
+	}
+
+	// get golden
+	gld, err := ioutil.ReadFile(golden)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// formatted source and golden must be the same
+	if err := tests.Diff(source, golden, description, res, gld); err != nil {
+		t.Error(err)
+		return
+	}
+
+}
+
+func checkClient(t *testing.T, session models.Session, client grpc_types.AgentMgmtClient, source, golden string, description string) {
 	_, err := ioutil.ReadFile(source)
 
 	if err != nil {
@@ -193,18 +337,38 @@ func checkClient(t *testing.T, session models.Session, client service.Service, s
 		return
 	}
 
+	var header, trailer metadata.MD
 	ctx := context.Background()
-	//var header, trailer metadata.MD
-	resp, err := client.GetAvailableAgents(ctx, session, mongoDBDatabase,
-	//	grpc.Header(&header),    // will retrieve header
-    //grpc.Trailer(&trailer),  // will retrieve trailer)
-)
+
+	resp, err := client.GetAvailableAgents(
+		ctx,
+		&grpc_types.GetAvailableAgentsRequest{Limit: 10},
+		grpc.Header(&header),   // will retrieve header
+		grpc.Trailer(&trailer), // will retrieve trailer
+	)
+
 	//md, ok := metadata.FromIncomingContext(ctx)
-
-
-	logger.Log("resp", fmt.Sprintf("\n%#v", resp), "err", err, "metadata", ctx)
+	if resp != nil {
+		logger.Log("resp", fmt.Sprintf("\n%#v", resp.AgentIds), "err", err, "header", fmt.Sprintf("\n%#v", header), "trailer", fmt.Sprintf("\n%#v", trailer))
+	}
 	if err != nil {
-		logger.Log("msg", "err is not nil")
+		logger.Log("msg", "err is not nil", "header", fmt.Sprintf("\n%#v", header), "trailer", fmt.Sprintf("\n%#v", trailer))
+		if val, ok := trailer["errortype"]; ok {
+			//do something here
+
+			logger.Log("msg", "errortype found key")
+			logger.Log("msg", val[0])
+			errortype, err := strconv.Atoi(val[0])
+			errortype2 := amerrors.ErrorType(errortype)
+			if err != nil {
+				logger.Log("msg", "failed conversitony")
+			}
+			switch errortype2 {
+			case amerrors.ErrAgentIDNotFound:
+				logger.Log("msg", "ErrAgentIDNotFoundError")
+
+			}
+		}
 		s, ok := status.FromError(err)
 		if !ok {
 			logger.Log("msg", status.Errorf(codes.Internal, "client call: unknown %v", err))

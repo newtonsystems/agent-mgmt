@@ -5,6 +5,8 @@ package tests
 // disgracefully ripped from https://github.com/benbjohnson/testing
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -37,4 +39,46 @@ func Equals(tb testing.TB, exp, act interface{}) {
 		fmt.Printf("\033[31m%s:%d:\n\n\texp: %#v\n\n\tgot: %#v\033[39m\n\n", filepath.Base(file), line, exp, act)
 		tb.FailNow()
 	}
+}
+
+// Diff compares a and b.
+func Diff(aname, bname, desc string, a, b []byte) error {
+	var buf bytes.Buffer // holding long error message
+
+	// compare lengths
+	if len(a) != len(b) {
+		fmt.Fprintf(&buf, "\nlength changed: len(%s) = %d, len(%s) = %d", aname, len(a), bname, len(b))
+	}
+
+	// compare contents
+	line := 1
+	offs := 0
+	for i := 0; i < len(a) && i < len(b); i++ {
+		ch := a[i]
+		if ch != b[i] {
+			fmt.Fprintf(&buf, "\n%s:%d:%d: %q", aname, line, i-offs+1, lineAt(a, offs))
+			fmt.Fprintf(&buf, "\n%s:%d:%d: %q", bname, line, i-offs+1, lineAt(b, offs))
+			fmt.Fprintf(&buf, "\n\n")
+			break
+		}
+		if ch == '\n' {
+			line++
+			offs = i + 1
+		}
+	}
+
+	if buf.Len() > 0 {
+		fmt.Fprintf(&buf, "\n%s\n", desc)
+		return errors.New(buf.String())
+	}
+	return nil
+}
+
+// lineAt returns the line in text starting at offset offs.
+func lineAt(text []byte, offs int) []byte {
+	i := offs
+	for i < len(text) && text[i] != '\n' {
+		i++
+	}
+	return text[offs:i]
 }

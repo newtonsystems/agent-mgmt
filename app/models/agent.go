@@ -9,7 +9,7 @@ import (
 
 	//"github.com/go-kit/kit/log"
 
-	//agentmgmterrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 
 	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"gopkg.in/mgo.v2/bson"
@@ -49,7 +49,7 @@ func (db *MongoDatabase) GetAgents(timestamp time.Time) ([]Agent, error) {
 
 	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).Limit(10).All(&agents)
 
-	//return agents, agentmgmterrors.ErrAgentIDNotFoundError("This fhjksahfk sh sa")
+	return agents, amerrors.ErrAgentIDNotFoundError("This fhjksahfk sh sa")
 	//return agents, errors.New("This is an test error")
 
 	if err != nil {

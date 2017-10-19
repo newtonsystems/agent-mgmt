@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
-	agentmgmterrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
@@ -51,11 +51,11 @@ func WrapError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
-	if aerr, ok := err.(*agentmgmterrors.AgentMgmtError); ok {
+	if aerr, ok := err.(*amerrors.AgentMgmtError); ok {
 		// Ignoring the error return here is safe because if setting the metadata
 		// fails, we'll still return an error, but it will be interpreted on the
 		// other side as an InternalServerError instead of a more specific one.
-		logger.Log("msg", "wrapping is current working I think ")
+		logger.Log("msg", "wrapping is current working I think ", "type", int(aerr.Type))
 		_ = grpc.SetTrailer(ctx, metadata.Pairs("errortype", strconv.Itoa(int(aerr.Type))))
 		return grpc.Errorf(codes.Unknown, err.Error())
 	}
@@ -196,7 +196,7 @@ func (s basicService) GetAgentIDFromRef(session models.Session, db string, refID
 
 	if agentID == 0 {
 		logger.Log("level", "warn", "msg", "Failed to get agent ID from ref ID", "err", err)
-		return 0, agentmgmterrors.ErrAgentIDNotFoundError("failed to find an Agent from ref id")
+		return 0, amerrors.ErrAgentIDNotFoundError("failed to find an Agent from ref id")
 	}
 
 	if err != nil {
