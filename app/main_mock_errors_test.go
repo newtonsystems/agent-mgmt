@@ -66,88 +66,11 @@ var data = []entry{
 		"getavailableagents.golden",
 		"A basic test of service's GetAvailableAgents()",
 	},
-	{
-		"getavailableagents",
-		&grpc_types.GetAvailableAgentsRequest{},
-		0,
-		"getavailableagents_oldheartbeat.input",
-		"response agent IDs",
-		"getavailableagents_oldheartbeat.golden",
-		"A test to ensure heartbeats older than one minute are not included as available agents by service's GetAvailableAgents()",
-	},
-	{
-		"getavailableagents",
-		&grpc_types.GetAvailableAgentsRequest{},
-		0,
-		"getavailableagents_futureheartbeat.input",
-		"response agent IDs",
-		"getavailableagents_futureheartbeat.golden",
-		"A test to ensure heartbeats newer than one minute are included as available agents by service's GetAvailableAgents()  (We accept future timestamps)",
-	},
-	{
-		"getavailableagents",
-		&grpc_types.GetAvailableAgentsRequest{},
-		0,
-		"getavailableagents_minuteagoexactly.input",
-		"response agent IDs",
-		"getavailableagents_minuteagoexactly.golden",
-		"A test to ensure a heartbeat exactly a minute ago is included as an available agent by service's GetAvailableAgents()",
-	},
-	{
-		"getavailableagents",
-		&grpc_types.GetAvailableAgentsRequest{Limit: 10},
-		0,
-		"getavailableagents_limit_results_10.input",
-		"response agent IDs",
-		"getavailableagents_limit_results_10.golden",
-		"A test to check there is a limit to the available agent ids returned by service's GetAvailableAgents()",
-	},
-	{
-		"getavailableagents",
-		&grpc_types.GetAvailableAgentsRequest{Limit: 3},
-		0,
-		"getavailableagents_limit.input",
-		"response agent IDs",
-		"getavailableagents_limit.golden",
-		"A test to check 'Limit' request argument works for service's GetAvailableAgents()",
-	},
-	{
-		"getagentidfromref",
-		&grpc_types.GetAgentIDFromRefRequest{RefId: "ref001a"},
-		0,
-		"getagentidfromref.input",
-		"response agent ID",
-		"getagentidfromref.golden",
-		"A basic test of service's GetAgentIDFromRef()",
-	},
-	{
-		"getagentidfromref",
-		&grpc_types.GetAgentIDFromRefRequest{RefId: ""},
-		amerrors.ErrAgentIDNotFound,
-		"getagentidfromref_empty.input",
-		"response agent ID",
-		"getagentidfromref_empty.golden",
-		"A test to check that we get an ErrAgentIDNotFound error when refID is empty returned by service's GetAgentIDFromRef()",
-	},
-	{
-		"getagentidfromref",
-		&grpc_types.GetAgentIDFromRefRequest{RefId: "refwrong"},
-		amerrors.ErrAgentIDNotFound,
-		"getagentidfromref_wrongref.input",
-		"response agent ID",
-		"getagentidfromref_wrongref.golden",
-		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
-	},
-	// {
-	// 	"heartbeat",
-	// 	&grpc_types.HeartBeatRequest{},
-	// 	0,
-	// 	"heartbeat.input",
-	// 	"response heartbeat status",
-	// 	"heartbeat.golden",
-	// 	"A basic test of service's HeartBeat()",
-	// },
 }
+
+// type mockFunctions interface {
+// 	mockA() (string[], error)
+// }
 
 // cleanUp removes everyfrom the database including all collections
 func cleanUp(session models.Session) {
@@ -155,6 +78,11 @@ func cleanUp(session models.Session) {
 }
 
 func TestGRPCServerClient(t *testing.T) {
+
+
+
+
+
 	// Freeze Time
 	service.NowFunc = func() time.Time {
 		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
@@ -162,16 +90,39 @@ func TestGRPCServerClient(t *testing.T) {
 		return freezeTime
 	}
 
+
+
+
 	// Initialise mongo connection
 	moSession := tests.CreateTestMongoConnection(*debug)
 	defer moSession.Refresh()
 	defer moSession.Close()
 
+
+
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
+	// https://husobee.github.io/golang/testing/unit-test/2015/06/08/golang-unit-testing.html
+	svc := tests.MockService{
+		MockGetAvailableAgents: func()([]string, error) {
+				agentIDs := []string{"2", "3", "4", "5"}
+				return agentIDs, nil
+			},
+	}
 	var (
-		service   = service.NewService(nil, nil, nil, nil, nil)
-		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
+
+		endpoints = amendpoint.NewEndpoint(svc, nil, nil, nil, moSession, "test")
 	)
+
+
+
+
+
+
+
+
+
+
+
 
 	// gRPC server
 	go func() {

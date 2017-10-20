@@ -5,6 +5,7 @@ package tests
 // mocks, test harnesses, helpers, etc.
 
 import (
+	"context"
 	"encoding/json"
 	stdlog "log"
 	"os"
@@ -17,7 +18,8 @@ import (
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/utils"
-
+	"github.com/newtonsystems/agent-mgmt/app/service"
+	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
 )
 
@@ -34,6 +36,44 @@ func envString(env, fallback string) string {
 	}
 	return e
 }
+
+// Service Layer Mocking -------------------------------------------------------
+
+// MockService acts as a mock of service.Service
+type MockService struct{
+	MockGetAvailableAgents func() ([]string, error)
+}
+
+func NewMockService() service.Service {
+	return MockService{}
+}
+
+func (fs MockService) Sum(ctx context.Context, a, b int) (int, error) {
+	return 0, nil
+}
+
+func (fs MockService) Concat(ctx context.Context, a, b string) (string, error) {
+	return "", nil
+}
+
+func (fs MockService) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error) {
+	var strNil []string
+	if fs.MockGetAvailableAgents != nil {
+		return fs.MockGetAvailableAgents()
+	}
+	return strNil, nil
+}
+
+func (fs MockService) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	return 0, nil
+}
+
+func (fs MockService) HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, nil
+}
+
+// -----------------------------------------------------------------------------
+
 
 // MockSession satisfies Session and act as a mock of *mgo.session.
 type MockSession struct{}
