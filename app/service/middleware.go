@@ -41,11 +41,11 @@ func (mw loggingMiddleware) Concat(ctx context.Context, a, b string) (v string, 
 	return mw.next.Concat(ctx, a, b)
 }
 
-func (mw loggingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string) (v []string, err error) {
+func (mw loggingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) (v []string, err error) {
 	defer func() {
 		mw.logger.Log("method", "GetAvailableAgents", "agent_ids", strings.Join(v, ", "), "err", err)
 	}()
-	return mw.next.GetAvailableAgents(ctx, session, db)
+	return mw.next.GetAvailableAgents(ctx, session, db, limit)
 }
 
 func (mw loggingMiddleware) GetAgentIDFromRef(session models.Session, db string, refID string) (v int32, err error) {
@@ -99,8 +99,8 @@ func (mw instrumentingMiddleware) Concat(ctx context.Context, a, b string) (stri
 	return v, err
 }
 
-func (mw instrumentingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error) {
-	v, err := mw.next.GetAvailableAgents(ctx, session, db)
+func (mw instrumentingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error) {
+	v, err := mw.next.GetAvailableAgents(ctx, session, db, limit)
 	mw.chars.Add(float64(len(v)))
 	return v, err
 }

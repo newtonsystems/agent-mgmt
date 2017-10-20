@@ -123,7 +123,7 @@ func (db MockDatabase) C(name string) models.Collection {
 // Mock service calls
 
 //GetAgents mocks models.GetAgents().
-func (db MockDatabase) GetAgents(timestamp time.Time) ([]models.Agent, error) {
+func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Agent, error) {
 	var agents []models.Agent
 	source := filepath.Join(dataDir, "get_agents.json")
 

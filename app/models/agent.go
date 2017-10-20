@@ -44,10 +44,10 @@ func (db *MongoDatabase) HeartBeat(agentID int32) error {
 }
 
 // GetAgents returns all Agents within a certain heartbeat
-func (db *MongoDatabase) GetAgents(timestamp time.Time) ([]Agent, error) {
+func (db *MongoDatabase) GetAgents(timestamp time.Time, limit int32) ([]Agent, error) {
 	var agents []Agent
 
-	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).Limit(10).All(&agents)
+	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).Limit(int(limit)).All(&agents)
 
 	//return agents, amerrors.ErrAgentIDNotFoundError("This fhjksahfk sh sa")
 	//return agents, errors.New("This is an test error")

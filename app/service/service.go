@@ -36,7 +36,7 @@ func init() {
 type Service interface {
 	Sum(ctx context.Context, a, b int) (int, error)
 	Concat(ctx context.Context, a, b string) (string, error)
-	GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error)
+	GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error)
 	GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error)
 	HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
 }
@@ -70,6 +70,7 @@ func UnWrapError(err error, md metadata.MD) error {
 	if err == nil {
 		return nil
 	}
+	logger.Log("level", "debug", "msg", "UnWrapError()")
 	if errTypeStrs, ok := md["errortype"]; ok {
 
 		unwrappedErr := grpc.ErrorDesc(err)
@@ -90,6 +91,7 @@ func UnWrapError(err error, md metadata.MD) error {
 		}
 		return amerrors.New(amerrors.ErrorType(errType), unwrappedErr)
 	}
+	logger.Log("level", "debug", "msg", "Failed to find errortype")
 	return err
 }
 
@@ -209,17 +211,17 @@ func (s basicService) GetAgentIDFromRef(session models.Session, db string, refID
 	return agentID, err
 }
 
-func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string) ([]string, error) {
+func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string, limit int32) ([]string, error) {
 	// Find available agents from Mongo.
 	// models.Agents are considered available if the heartbeat has been received in
 	// the last minute (heartbeats should be every 30 secs)
-	logger.Log("level", "debug", "msg", "Getting available agents from mongo")
+	logger.Log("level", "debug", "msg", "Getting available agents from mongo with limit: "+strconv.Itoa(int(limit)))
 
 	minuteAgoDate := NowFunc().Add(-time.Minute)
 	logger.Log("level", "debug", "msg", "Getting available agents with heartbeats no older than "+minuteAgoDate.Format("01/02/2006 03:04:05"))
 
 	var agentIDs []string
-	agents, err := session.DB(db).GetAgents(minuteAgoDate)
+	agents, err := session.DB(db).GetAgents(minuteAgoDate, limit)
 
 	if err != nil {
 		logger.Log("level", "err", "msg", "Failed to get agents", "err", err)

@@ -16,7 +16,7 @@ func TestAvailableAgentsReturnIDs(t *testing.T) {
 	s := service.NewBasicService()
 	sess := NewMockSession()
 
-	value, err := s.GetAvailableAgents(context.Background(), sess, "fakedb")
+	value, err := s.GetAvailableAgents(context.Background(), sess, "fakedb", 10)
 	Ok(t, err)
 	Equals(t, []string{"1", "2"}, value)
 }

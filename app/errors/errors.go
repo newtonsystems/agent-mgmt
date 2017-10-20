@@ -29,6 +29,17 @@ func New(errType ErrorType, msg string, args ...interface{}) error {
 	}
 }
 
+// StrName is a convenience function for getting the string constant name
+func StrName(errType ErrorType) string {
+	switch errType {
+	case InternalServer:
+		return "InternalServer"
+	case ErrAgentIDNotFound:
+		return "ErrAgentIDNotFound"
+	}
+	return fmt.Sprintf("%v", errType)
+}
+
 // Is is a convenience function for testing the internal type of an AgentMgmtError
 func Is(err error, errType ErrorType) bool {
 	bErr, ok := err.(*AgentMgmtError)

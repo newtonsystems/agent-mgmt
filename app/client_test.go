@@ -1,6 +1,7 @@
 package main_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -10,14 +11,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"bytes"
-	"time"
 	"testing"
+	"time"
 
-	"github.com/go-kit/kit/endpoint"
-	grpctransport "github.com/go-kit/kit/transport/grpc"
 	amendpoint "github.com/newtonsystems/agent-mgmt/app/endpoint"
-	//amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
 	"github.com/newtonsystems/agent-mgmt/app/tests"
@@ -35,21 +33,22 @@ var debug = flag.Bool("debug", false, "turn on mongo debug")
 var logger = utils.GetLogger()
 
 const (
-	dataDir = "./testdata"
+	dataDir     = "./testdata"
 	mongoDBName = "test"
 )
 
+// An interface so we can encode different grpc requests
 type testRequest interface {
 }
 
 type entry struct {
-	testName    string
-	testArgs    testRequest
-	testHasErr  error
-	source      string
-	compare     string
-	golden      string
-	description string
+	testName    string             // An identifier test name e.g. getavailableagents
+	testReq     testRequest        // The grpc request e.g. &grpc_types.GetAvailableAgentsRequest{Limit: 10},
+	testHasErr  amerrors.ErrorType // The error expected by service call. Nil if no error is expected by the rpc call
+	source      string             // The source file that contains data to be inserted into mongo
+	compare     string             // A description of what we compare against the golden
+	golden      string             // The golden file
+	description string             // A useful description of what the test intends to accomplish
 }
 
 const (
@@ -61,11 +60,92 @@ var data = []entry{
 	{
 		"getavailableagents",
 		&grpc_types.GetAvailableAgentsRequest{},
-		nil,
+		0,
 		"getavailableagents.input",
 		"response agent IDs",
 		"getavailableagents.golden",
 		"A basic test of service's GetAvailableAgents()",
+	},
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{},
+		0,
+		"getavailableagents_oldheartbeat.input",
+		"response agent IDs",
+		"getavailableagents_oldheartbeat.golden",
+		"A test to ensure heartbeats older than one minute are not included as available agents by service's GetAvailableAgents()",
+	},
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{},
+		0,
+		"getavailableagents_futureheartbeat.input",
+		"response agent IDs",
+		"getavailableagents_futureheartbeat.golden",
+		"A test to ensure heartbeats newer than one minute are included as available agents by service's GetAvailableAgents()  (We accept future timestamps)",
+	},
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{},
+		0,
+		"getavailableagents_minuteagoexactly.input",
+		"response agent IDs",
+		"getavailableagents_minuteagoexactly.golden",
+		"A test to ensure a heartbeat exactly a minute ago is included as an available agent by service's GetAvailableAgents()",
+	},
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{Limit: 10},
+		0,
+		"getavailableagents_limit_results_10.input",
+		"response agent IDs",
+		"getavailableagents_limit_results_10.golden",
+		"A test to check there is a limit to the available agent ids returned by service's GetAvailableAgents()",
+	},
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{Limit: 3},
+		0,
+		"getavailableagents_limit.input",
+		"response agent IDs",
+		"getavailableagents_limit.golden",
+		"A test to check 'Limit' request argument works for service's GetAvailableAgents()",
+	},
+	{
+		"getagentidfromref",
+		&grpc_types.GetAgentIDFromRefRequest{RefId: "ref001a"},
+		0,
+		"getagentidfromref.input",
+		"response agent ID",
+		"getagentidfromref.golden",
+		"A basic test of service's GetAgentIDFromRef()",
+	},
+	{
+		"getagentidfromref",
+		&grpc_types.GetAgentIDFromRefRequest{RefId: ""},
+		amerrors.ErrAgentIDNotFound,
+		"getagentidfromref_empty.input",
+		"response agent ID",
+		"getagentidfromref_empty.golden",
+		"A test to check that we get an ErrAgentIDNotFound error when refID is empty returned by service's GetAgentIDFromRef()",
+	},
+	{
+		"getagentidfromref",
+		&grpc_types.GetAgentIDFromRefRequest{RefId: "refwrong"},
+		amerrors.ErrAgentIDNotFound,
+		"getagentidfromref_wrongref.input",
+		"response agent ID",
+		"getagentidfromref_wrongref.golden",
+		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
+	},
+	{
+		"heartbeat",
+		&grpc_types.HeartBeatRequest{},
+		0,
+		"heartbeat.input",
+		"response heartbeat status",
+		"heartbeat.golden",
+		"A basic test of service's HeartBeat()",
 	},
 }
 
@@ -74,66 +154,7 @@ func cleanUp(session models.Session) {
 	session.DB(mongoDBName).DropDatabase()
 }
 
-
-func createTestServer(t *testing.T) {
-
-	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug)
-	defer moSession.Refresh()
-	defer moSession.Close()
-
-	// Create Service &  Endpoints (no logger, tracer, metrics etc)
-	var (
-		service   = service.NewService(nil, nil, nil, nil, nil)
-		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
-	)
-
-	// gRPC server
-	go func() {
-		ln, err := net.Listen("tcp", hostPort)
-		if err != nil {
-			t.Error(err)
-			t.FailNow()
-		}
-
-		srv := transport.GRPCServer(endpoints, nil, nil)
-		s := grpc.NewServer()
-		grpc_types.RegisterAgentMgmtServer(s, srv)
-		//defer s.GracefulStop()
-
-		s.Serve(ln)
-	}()
-
-}
-
-func createTestClient(t *testing.T, conn *grpc.ClientConn) service.Service {
-	var getAvailableAgentsEndpoint endpoint.Endpoint
-	{
-		getAvailableAgentsEndpoint = grpctransport.NewClient(
-			conn, "grpc_types.AgentMgmt", "GetAvailableAgents",
-			transport.EncodeGRPCGetAvailableAgentsRequest,
-			transport.DecodeGRPCGetAvailableAgentsResponse,
-			grpc_types.GetAvailableAgentsResponse{},
-		).Endpoint()
-	}
-	var getAgentIDFromRefEndpoint endpoint.Endpoint
-	{
-		getAgentIDFromRefEndpoint = grpctransport.NewClient(
-			conn, "grpc_types.AgentMgmt", "GetAgentIDFromRef",
-			transport.EncodeGRPCGetAvailableAgentsRequest,
-			transport.DecodeGRPCGetAvailableAgentsResponse,
-			grpc_types.GetAgentIDFromRefResponse{},
-		).Endpoint()
-	}
-
-	return amendpoint.Set{
-		GetAvailableAgentsEndpoint: getAvailableAgentsEndpoint,
-		GetAgentIDFromRefEndpoint:  getAgentIDFromRefEndpoint,
-	}
-}
-
-func TestGRPCClient(t *testing.T) {
-
+func TestGRPCServerClient(t *testing.T) {
 	// Freeze Time
 	service.NowFunc = func() time.Time {
 		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
@@ -168,7 +189,6 @@ func TestGRPCClient(t *testing.T) {
 		s.Serve(ln)
 	}()
 
-
 	// Connection to grpc server and create a client
 	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
 	defer conn.Close()
@@ -186,7 +206,7 @@ func TestGRPCClient(t *testing.T) {
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
 			logger.Log("msg", "Running service test for "+e.testName)
-			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testArgs, e.testHasErr)
+			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
 		})
 		cleanUp(moSession)
 	}
@@ -195,51 +215,64 @@ func TestGRPCClient(t *testing.T) {
 
 // runSrvTest runs a specifc test based off testName
 // we convert to bytes for possible writing
-func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer metadata.MD, testName string, testArgs testRequest) ([]byte, error) {
+func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer *metadata.MD, testName string, testReq testRequest) ([]byte, error) {
 	var res []byte
 	var resErr error
 	ctx := context.Background()
 
 	switch testName {
 	case "getavailableagents":
-		request, ok := testArgs.(*grpc_types.GetAvailableAgentsRequest)
+		request, ok := testReq.(*grpc_types.GetAvailableAgentsRequest)
 		if !ok {
 			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
 		}
 		resp, err := client.GetAvailableAgents(
 			ctx,
 			request,
-			grpc.Header(&header),
-			grpc.Trailer(&trailer),
+			grpc.Header(header),
+			grpc.Trailer(trailer),
 		)
-		if err != nil {
-			//res = []byte()
-			resErr = err
-			logger.Log("msg", fmt.Sprintf("\n%#v", resp))
-
-		} else {
+		// Style: this doesnt feel go like
+		if err == nil {
 			res = []byte(strings.Join(resp.AgentIds, ", "))
-			resErr = err
 		}
+		resErr = err
 
 	case "getagentidfromref":
+		request, ok := testReq.(*grpc_types.GetAgentIDFromRefRequest)
+		if !ok {
+			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+		}
 		resp, err := client.GetAgentIDFromRef(
 			ctx,
-			&grpc_types.GetAgentIDFromRefRequest{RefId: "hsajdhjas"},
-			grpc.Header(&header),
-			grpc.Trailer(&trailer),
+			request,
+			grpc.Header(header),
+			grpc.Trailer(trailer),
 		)
-		res = []byte(strconv.Itoa(int(resp.AgentId)))
+		if *verbose {
+			fmt.Printf("Response: " + fmt.Sprintf("%#v", resp) + "\n")
+		}
+		// Style: this doesnt feel go like
+		if err == nil {
+			res = []byte(strconv.Itoa(int(resp.AgentId)))
+		}
 		resErr = err
 
 	case "heartbeat":
+		request, ok := testReq.(*grpc_types.HeartBeatRequest)
+		if !ok {
+			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+		}
 		resp, err := client.HeartBeat(
 			ctx,
-			&grpc_types.HeartBeatRequest{},
-			grpc.Header(&header),
-			grpc.Trailer(&trailer),
+			request,
+			grpc.Header(header),
+			grpc.Trailer(trailer),
 		)
-		res = []byte(strconv.Itoa(int(resp.Status)))
+		// Style: this doesnt feel go like
+		if err == nil {
+			res = []byte(strconv.Itoa(int(resp.Status)))
+		}
 		resErr = err
 
 	}
@@ -253,7 +286,7 @@ func insertFixtureToDatabase(t *testing.T, session models.Session, testName, sou
 
 	switch testName {
 	case "getavailableagents":
-	fallthrough
+		fallthrough
 	case "heartbeat":
 		var agents []models.Agent
 		json.Unmarshal(src, &agents)
@@ -266,12 +299,12 @@ func insertFixtureToDatabase(t *testing.T, session models.Session, testName, sou
 		// Insert agents into mongo
 		for _, agent := range agents {
 			if *verbose {
-				fmt.Printf("Inserting "+fmt.Sprintf("%#v", agent)+" into collection 'agents'\n")
+				fmt.Printf("Inserting " + fmt.Sprintf("%#v", agent) + " into collection 'agents'\n")
 			}
 			err := session.DB("test").C("agents").Insert(agent)
 			if err != nil {
 				t.Error(err)
-				tests.FailNowAt(t, "Could not insert " + fmt.Sprintf("%#v", agent) + " into mongo")
+				tests.FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", agent)+" into mongo")
 			}
 		}
 
@@ -287,19 +320,19 @@ func insertFixtureToDatabase(t *testing.T, session models.Session, testName, sou
 		// Insert phonesessions into mongo
 		for _, phoneSess := range phoneSessions {
 			if *verbose {
-				fmt.Printf("Inserting "+fmt.Sprintf("%#v", phoneSess)+" into collection 'phonesessions'\n")
+				fmt.Printf("Inserting " + fmt.Sprintf("%#v", phoneSess) + " into collection 'phonesessions'\n")
 			}
 			err := session.DB("test").C("phonesessions").Insert(phoneSess)
 			if err != nil {
 				t.Error(err)
-				tests.FailNowAt(t, "Could not insert " + fmt.Sprintf("%#v", phoneSess) + " into mongo")
+				tests.FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", phoneSess)+" into mongo")
 			}
 		}
 
 	}
 }
 
-func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session models.Session, source, golden, compare, description, testName string, testArgs testRequest, testHasErr error) {
+func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session models.Session, source, golden, compare, description, testName string, testReq testRequest, testHasErr amerrors.ErrorType) {
 	// read input from file
 	src, err := ioutil.ReadFile(source)
 
@@ -313,13 +346,17 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 
 	// run service call
 	var header, trailer metadata.MD
-	res, err := runSrvTest(t, client, header, trailer, testName, testArgs)
+	res, err := runSrvTest(t, client, &header, &trailer, testName, testReq)
 
 	// is an error is expected? If so, we check it is the correct one
 	if err != nil {
-		if testHasErr != nil && service.UnWrapError(err, trailer) != testHasErr {
+		if *verbose {
+			fmt.Printf("Error in response found: " + fmt.Sprintf("%#v", service.UnWrapError(err, trailer)) + "\n")
+			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(service.UnWrapError(err, trailer), testHasErr)))
+		}
+		if testHasErr != 0 && !amerrors.Is(service.UnWrapError(err, trailer), testHasErr) {
 			t.Error(err)
-			t.FailNow()
+			tests.FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", service.UnWrapError(err, trailer)))
 		}
 	}
 
@@ -345,5 +382,4 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 		t.Error(err)
 		return
 	}
-
 }

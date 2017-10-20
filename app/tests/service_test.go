@@ -155,7 +155,7 @@ func tGetAvailableAgents(t *testing.T, source string, s service.Service, session
 
 	insertAgentsIntoMongoFromInput(t, session, src, source)
 
-	agentIDs, err := s.GetAvailableAgents(context.Background(), session, "test")
+	agentIDs, err := s.GetAvailableAgents(context.Background(), session, "test", 10)
 
 	// Convert to bytes for possible writing
 	resString := strings.Join(agentIDs, ", ")
@@ -314,7 +314,7 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 	}
 
 	// formatted source and golden must be the same
-	if err := diff(source, golden, description, res, gld); err != nil {
+	if err := Diff(source, golden, description, res, gld); err != nil {
 		t.Error(err)
 		return
 	}

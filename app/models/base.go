@@ -57,7 +57,7 @@ func (d MongoDatabase) C(name string) Collection {
 // (currently MongoDatabase).
 type DataLayer interface {
 	C(name string) Collection
-	GetAgents(timestamp time.Time) ([]Agent, error)
+	GetAgents(timestamp time.Time, limit int32) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
 	HeartBeat(agentID int32) error
 	DropDatabase() error

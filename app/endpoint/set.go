@@ -112,34 +112,6 @@ func (s Set) Concat(ctx context.Context, a, b string) (string, error) {
 	return response.V, response.Err
 }
 
-// GetAvailableAgentsRequest implements the service interface, so Set may be used as a
-// service. This is primarily useful in the context of a client library.
-func (s Set) GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error) {
-	resp, err := s.GetAvailableAgentsEndpoint(ctx, GetAvailableAgentsRequest{Limit: 10})
-	if err != nil {
-		var empty []string
-		return empty, err
-	}
-	response := resp.(GetAvailableAgentsResponse)
-	return response.AgentIds, err
-}
-
-// GetAgentIDFromRef implements the service interface, so Set may be used as a
-// service. This is primarily useful in the context of a client library.
-func (s Set) GetAgentIDFromRef(sess models.Session, db string, refID string) (int32, error) {
-	resp, _ := s.GetAgentIDFromRefEndpoint(nil, GetAgentIDFromRefRequest{RefId: refID})
-	response := resp.(GetAgentIDFromRefResponse)
-	return response.AgentId, response.Err
-}
-
-// HeartBeat implements the service interface, so Set may be used as a
-// service. This is primarily useful in the context of a client library.
-func (s Set) HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
-	resp, _ := s.HeartBeatEndpoint(nil, HeartBeatRequest{Agent: agent})
-	response := resp.(HeartBeatResponse)
-	return response.Status, response.Message
-}
-
 // ------------------
 
 // MakeSumEndpoint constructs a Sum endpoint wrapping the service.
@@ -163,8 +135,8 @@ func MakeConcatEndpoint(s service.Service) endpoint.Endpoint {
 // MakeGetAvailableAgentsEndpoint constructs a GetAvailableAgents endpoint wrapping the service.
 func MakeGetAvailableAgentsEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
-		//req := request.(GetAvailableAgentsRequest)
-		v, err := s.GetAvailableAgents(ctx, session, db)
+		req := request.(GetAvailableAgentsRequest)
+		v, err := s.GetAvailableAgents(ctx, session, db, req.Limit)
 		return GetAvailableAgentsResponse{AgentIds: v, Err: err}, service.WrapError(ctx, err)
 	}
 }
@@ -174,15 +146,16 @@ func MakeGetAgentIDFromRefEndpoint(s service.Service, session models.Session, db
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(GetAgentIDFromRefRequest)
 		v, err := s.GetAgentIDFromRef(session, db, req.RefId)
-		return GetAgentIDFromRefResponse{AgentId: v, Err: err}, nil
+		return GetAgentIDFromRefResponse{AgentId: v, Err: err}, service.WrapError(ctx, err)
 	}
 }
 
 // MakeGetAgentIDFromRefEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
 func MakeHeartBeatEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
-		req := request.(HeartBeatRequest)
-		v, err := s.HeartBeat(session, db, req.Agent)
+		//req := request.(HeartBeatRequest)
+		agent := models.Agent{AgentID: 10}
+		v, err := s.HeartBeat(session, db, agent)
 		return HeartBeatResponse{Status: v, Message: err}, nil
 	}
 }
