@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -23,7 +24,11 @@ import (
 	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	mgo "gopkg.in/mgo.v2"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -138,15 +143,52 @@ var data = []entry{
 		"getagentidfromref_wrongref.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
 	},
-	// {
-	// 	"heartbeat",
-	// 	&grpc_types.HeartBeatRequest{},
-	// 	0,
-	// 	"heartbeat.input",
-	// 	"response heartbeat status",
-	// 	"heartbeat.golden",
-	// 	"A basic test of service's HeartBeat()",
-	// },
+	{
+		"heartbeat",
+		&grpc_types.HeartBeatRequest{AgentId: 3},
+		0,
+		"heartbeat.input",
+		"response heartbeat status",
+		"heartbeat.golden",
+		"A basic test of service's HeartBeat()",
+	},
+	{
+		"heartbeat",
+		&grpc_types.HeartBeatRequest{AgentId: 32},
+		amerrors.ErrAgentIDNotFound,
+		"heartbeat.input",
+		"response heartbeat status",
+		"heartbeat_wrongagentid.golden",
+		"A test to check correct error if the agent does not exist given agent id provided to service's HeartBeat()",
+	},
+	{
+		"heartbeat",
+		&grpc_types.HeartBeatRequest{},
+		amerrors.ErrAgentIDNotFound,
+		"heartbeat.input",
+		"response heartbeat status",
+		"heartbeat_noagentidinrequest.golden",
+		"A test to check correct error if no agent id is provided to service's HeartBeat()",
+	},
+}
+
+type entryQueryError struct {
+	testName    string      // An identifier test name e.g. getavailableagents
+	testReq     testRequest // The grpc request e.g. &grpc_types.GetAvailableAgentsRequest{Limit: 10},
+	description string      // A useful description of what the test intends to accomplish
+}
+
+var dataMockErrors = []entryQueryError{
+	{
+		"getavailableagents",
+		&grpc_types.GetAvailableAgentsRequest{},
+		"A basic QueryError test of service's GetAvailableAgents()",
+	},
+	{
+		"getagentidfromref",
+		&grpc_types.GetAgentIDFromRefRequest{},
+		"A basic QueryError test of service's GetAgentIDFromRef()",
+	},
 }
 
 // cleanUp removes everyfrom the database including all collections
@@ -154,67 +196,7 @@ func cleanUp(session models.Session) {
 	session.DB(mongoDBName).DropDatabase()
 }
 
-func TestGRPCServerClient(t *testing.T) {
-	// Freeze Time
-	service.NowFunc = func() time.Time {
-		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
-		logger.Log("level", "debug", "msg", "The time is "+freezeTime.Format("01/02/2006 03:04:05"))
-		return freezeTime
-	}
-
-	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug)
-	defer moSession.Refresh()
-	defer moSession.Close()
-
-	// Create Service &  Endpoints (no logger, tracer, metrics etc)
-	var (
-		service   = service.NewService(nil, nil, nil, nil, nil)
-		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
-	)
-
-	// gRPC server
-	go func() {
-		ln, err := net.Listen("tcp", hostPort)
-		if err != nil {
-			t.Error(err)
-			t.FailNow()
-		}
-
-		srv := transport.GRPCServer(endpoints, nil, nil)
-		s := grpc.NewServer()
-		grpc_types.RegisterAgentMgmtServer(s, srv)
-		defer s.GracefulStop()
-
-		s.Serve(ln)
-	}()
-
-	// Connection to grpc server and create a client
-	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
-	defer conn.Close()
-
-	if err != nil {
-		t.Fatalf("unable to Dial: %+v", err)
-		t.FailNow()
-	}
-
-	client := grpc_types.NewAgentMgmtClient(conn)
-
-	// Run through tests
-	for _, e := range data {
-		source := filepath.Join(dataDir, e.source)
-		golden := filepath.Join(dataDir, e.golden)
-		t.Run(e.source, func(t *testing.T) {
-			logger.Log("msg", "Running service test for "+e.testName)
-			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
-		})
-		cleanUp(moSession)
-	}
-
-}
-
-// runSrvTest runs a specifc test based off testName
-// we convert to bytes for possible writing
+// runSrvTest runs a specifc test based off testName we convert to bytes for possible writing
 func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer *metadata.MD, testName string, testReq testRequest) ([]byte, error) {
 	var res []byte
 	var resErr error
@@ -381,5 +363,146 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 	if err := tests.Diff(compare, golden, description, res, gld); err != nil {
 		t.Error(err)
 		return
+	}
+}
+
+func TestGRPCServerClient(t *testing.T) {
+	// Freeze Time
+	service.NowFunc = func() time.Time {
+		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
+		logger.Log("level", "debug", "msg", "The time is "+freezeTime.Format("01/02/2006 03:04:05"))
+		return freezeTime
+	}
+
+	// Initialise mongo connection
+	moSession := tests.CreateTestMongoConnection(*debug)
+	//defer moSession.Refresh()
+	//defer moSession.Close()
+
+	// Create Service &  Endpoints (no logger, tracer, metrics etc)
+	var (
+		service   = service.NewService(nil, nil, nil, nil, nil)
+		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
+	)
+
+	// gRPC server
+	proCh := make(chan string)
+	go func() {
+		ln, err := net.Listen("tcp", hostPort)
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+
+		for {
+			select {
+			case <-proCh:
+				log.Println("stopping listening on", ln.Addr())
+				ln.Close()
+				return
+			default:
+			}
+
+			srv := transport.GRPCServer(endpoints, nil, nil)
+			s := grpc.NewServer()
+			grpc_types.RegisterAgentMgmtServer(s, srv)
+			go s.Serve(ln)
+		}
+	}()
+
+	// Connection to grpc server and create a client
+	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
+	defer conn.Close()
+
+	if err != nil {
+		t.Fatalf("unable to Dial: %+v", err)
+		t.FailNow()
+	}
+
+	client := grpc_types.NewAgentMgmtClient(conn)
+
+	// Run through tests
+	for _, e := range data {
+		source := filepath.Join(dataDir, e.source)
+		golden := filepath.Join(dataDir, e.golden)
+		t.Run(e.source, func(t *testing.T) {
+			logger.Log("msg", "Running service test for "+e.testName)
+			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
+		})
+		cleanUp(moSession)
+	}
+	close(proCh)
+}
+
+// TestGRPCQueryError tests the server against query errors
+func TestGRPCQueryError(t *testing.T) {
+	// Initialise mongo connection
+	moSession := tests.CreateTestMongoConnection(*debug)
+	defer moSession.Refresh()
+	defer moSession.Close()
+
+	// Create Service &  Endpoints (no logger, tracer, metrics etc)
+	// https://husobee.github.io/golang/testing/unit-test/2015/06/08/golang-unit-testing.html
+	var (
+		svc = tests.MockService{
+			MockGetAvailableAgents: func() ([]string, error) {
+				var agentIDs []string
+				return agentIDs, &mgo.QueryError{Code: 1}
+			},
+			MockGetAgentIDFromRef: func() (int32, error) {
+				return 0, &mgo.QueryError{Code: 1}
+			},
+			MockHeartBeat: func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+				return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, &mgo.QueryError{Code: 1}
+			},
+		}
+		endpoints = amendpoint.NewEndpoint(svc, nil, nil, nil, moSession, "test")
+	)
+
+	// gRPC server
+	go func() {
+		ln, err := net.Listen("tcp", hostPort)
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+
+		srv := transport.GRPCServer(endpoints, nil, nil)
+		s := grpc.NewServer()
+		grpc_types.RegisterAgentMgmtServer(s, srv)
+		defer s.GracefulStop()
+
+		s.Serve(ln)
+	}()
+
+	// Connection to grpc server and create a client
+	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
+	defer conn.Close()
+
+	if err != nil {
+		t.Fatalf("unable to Dial: %+v", err)
+		t.FailNow()
+	}
+
+	client := grpc_types.NewAgentMgmtClient(conn)
+
+	// Run through tests
+	for _, e := range dataMockErrors {
+		t.Run(e.description, func(t *testing.T) {
+			logger.Log("msg", "Running service test (mocking QueryError) for "+e.testName)
+
+			// run service call
+			var header, trailer metadata.MD
+			_, err := runSrvTest(t, client, &header, &trailer, e.testName, e.testReq)
+
+			// is an error is expected? If so, we check it is the correct one{
+			s, _ := status.FromError(err)
+			if s.Code() != codes.Unknown {
+				t.Error(err)
+				t.FailNow()
+			}
+
+		})
+		cleanUp(moSession)
 	}
 }

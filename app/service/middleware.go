@@ -55,11 +55,11 @@ func (mw loggingMiddleware) GetAgentIDFromRef(session models.Session, db string,
 	return mw.next.GetAgentIDFromRef(session, db, refID)
 }
 
-func (mw loggingMiddleware) HeartBeat(session models.Session, db string, agent models.Agent) (status grpc_types.HeartBeatResponse_HeartBeatStatus, err error) {
+func (mw loggingMiddleware) HeartBeat(session models.Session, db string, agentID int32) (status grpc_types.HeartBeatResponse_HeartBeatStatus, err error) {
 	defer func() {
-		mw.logger.Log("method", "HeartBeat", "agent_id", agent.AgentID, "status", status)
+		mw.logger.Log("method", "HeartBeat", "agent_id", agentID, "status", status)
 	}()
-	return mw.next.HeartBeat(session, db, agent)
+	return mw.next.HeartBeat(session, db, agentID)
 }
 
 // InstrumentingMiddleware returns a service middleware that instruments
@@ -111,8 +111,8 @@ func (mw instrumentingMiddleware) GetAgentIDFromRef(session models.Session, db s
 	return v, err
 }
 
-func (mw instrumentingMiddleware) HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
-	status, err := mw.next.HeartBeat(session, db, agent)
+func (mw instrumentingMiddleware) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+	status, err := mw.next.HeartBeat(session, db, agentID)
 	mw.beats.Add(1)
 	return status, err
 }

@@ -57,6 +57,7 @@ func (d MongoDatabase) C(name string) Collection {
 // (currently MongoDatabase).
 type DataLayer interface {
 	C(name string) Collection
+	AgentExists(agentID int32) (bool, error)
 	GetAgents(timestamp time.Time, limit int32) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
 	HeartBeat(agentID int32) error
@@ -145,18 +146,6 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 // PrepareDB ensure presence of persistent and immutable data in the DB.
 func PrepareDB(session Session, db string, logger log.Logger) {
 	indexes := make(map[string]mgo.Index)
-	// indexes["questions"] = mgo.Index{
-	// 	Key:        []string{"qid", "sentence", "match_positions"},
-	// 	Unique:     true,
-	// 	DropDups:   true,
-	// 	Background: false,
-	// }
-	// indexes["scores"] = mgo.Index{
-	// 	Key:        []string{"username"},
-	// 	Unique:     false,
-	// 	DropDups:   false,
-	// 	Background: false,
-	// }
 	indexes["agents"] = mgo.Index{
 		Key:        []string{"agentid"},
 		Unique:     true,

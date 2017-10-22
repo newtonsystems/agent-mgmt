@@ -6,13 +6,68 @@ package tests
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
+
+	"github.com/newtonsystems/agent-mgmt/app/models"
 )
+
+// InsertFixturesToDB Unmarshal JSON From File
+func InsertFixturesToDB(t *testing.T, session models.Session, testName, source string, src []byte, verbose *bool) {
+	var errMessage = "No JSON data found when unmarshalled data from " + source
+
+	switch testName {
+	case "getavailableagents":
+		fallthrough
+	case "heartbeat":
+		var agents []models.Agent
+		json.Unmarshal(src, &agents)
+
+		// Check we have found some input
+		if len(agents) == 0 {
+			FailNowAt(t, errMessage)
+		}
+
+		// Insert agents into mongo
+		for _, agent := range agents {
+			if *verbose {
+				fmt.Printf("Inserting " + fmt.Sprintf("%#v", agent) + " into collection 'agents'\n")
+			}
+			err := session.DB("test").C("agents").Insert(agent)
+			if err != nil {
+				t.Error(err)
+				FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", agent)+" into mongo")
+			}
+		}
+
+	case "getagentidfromref":
+		var phoneSessions []models.PhoneSession
+		json.Unmarshal(src, &phoneSessions)
+
+		// Check we have found some input
+		if len(phoneSessions) == 0 {
+			FailNowAt(t, errMessage)
+		}
+
+		// Insert phonesessions into mongo
+		for _, phoneSess := range phoneSessions {
+			if *verbose {
+				fmt.Printf("Inserting " + fmt.Sprintf("%#v", phoneSess) + " into collection 'phonesessions'\n")
+			}
+			err := session.DB("test").C("phonesessions").Insert(phoneSess)
+			if err != nil {
+				t.Error(err)
+				FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", phoneSess)+" into mongo")
+			}
+		}
+
+	}
+}
 
 // FailNowAt is a helper function to display more information on a Fail Now
 func FailNowAt(t *testing.T, msg string) {

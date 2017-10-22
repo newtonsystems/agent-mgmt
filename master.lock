@@ -1,5 +1,5 @@
 hash: 99c2213d8a966d813541a7cdf52ef04b36592d14f71a7d455642fb4cb5d8dfcb
-updated: 2017-10-16T19:40:35.617829+01:00
+updated: 2017-10-22T15:38:53.388375+01:00
 imports:
 - name: github.com/afex/hystrix-go
   version: f118cd938f786d24f46cc307981d8f63b7951020
@@ -34,8 +34,6 @@ imports:
   - metrics
   - metrics/internal/lv
   - metrics/prometheus
-  - ratelimit
-  - tracing/opentracing
   - transport/grpc
   - transport/http
 - name: github.com/go-logfmt/logfmt
@@ -60,13 +58,12 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/newtonsystems/grpc_types
-  version: 8e2dd972b8f899b37166e2d45ce80ba8e1a63633
+  version: 21c1991ba328d6d62fb540f889cc07cc6ec23d38
   subpackages:
   - go/grpc_types
 - name: github.com/opentracing/opentracing-go
   version: 1949ddbfd147afd4d964a9f00b24eb291e0e7c38
   subpackages:
-  - ext
   - log
 - name: github.com/openzipkin/zipkin-go-opentracing
   version: 9c88fa03bfdfaa5fec7cd1b40f3d10ec15c15fc6

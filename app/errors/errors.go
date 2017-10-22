@@ -9,6 +9,7 @@ const (
 	InternalServer ErrorType = iota
 	_
 	ErrAgentIDNotFound
+	ErrAgentNotFound
 )
 
 // AgentMgmtError represents internal Boulder errors
@@ -36,6 +37,8 @@ func StrName(errType ErrorType) string {
 		return "InternalServer"
 	case ErrAgentIDNotFound:
 		return "ErrAgentIDNotFound"
+	case ErrAgentNotFound:
+		return "ErrAgentNotFound"
 	}
 	return fmt.Sprintf("%v", errType)
 }
@@ -56,4 +59,9 @@ func InternalServerError(msg string, args ...interface{}) error {
 // ErrAgentIDNotFoundError returns when we cant find an agent ID
 func ErrAgentIDNotFoundError(msg string, args ...interface{}) error {
 	return New(ErrAgentIDNotFound, msg, args...)
+}
+
+// ErrAgentNotFoundError returns when we cant find an agent
+func ErrAgentNotFoundError(msg string, args ...interface{}) error {
+	return New(ErrAgentNotFound, msg, args...)
 }

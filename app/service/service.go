@@ -38,7 +38,7 @@ type Service interface {
 	Concat(ctx context.Context, a, b string) (string, error)
 	GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error)
 	GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error)
-	HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+	HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
 }
 
 // Elegantly ripped from https://github.com/letsencrypt/boulder/blob/f193137405a22057fe46a1e0e27f9d1c9e07de8b/grpc/errors.go
@@ -177,14 +177,22 @@ func TBD() {
 
 }
 
-func (s basicService) HeartBeat(session models.Session, db string, client models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
-	// Updated heartbeat (LastHeartBeat)
-	logger.Log("level", "debug", "msg", "Updating heartbeat for agent ID: "+strconv.Itoa(int(client.AgentID)))
+// HeartBeat() updates heartbeat for given agent id (LastHeartBeat)
+func (s basicService) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
 
-	err := session.DB(db).HeartBeat(client.AgentID)
+	logger.Log("level", "debug", "msg", "Updating heartbeat for agent ID: "+strconv.Itoa(int(agentID)))
+
+	exists, err := session.DB(db).AgentExists(agentID)
+
+	if !exists {
+		logger.Log("level", "err", "err", err)
+		return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, err
+	}
+
+	err = session.DB(db).HeartBeat(agentID)
 
 	if err != nil {
-		logger.Log("level", "err", "msg", "Failed to update heartbeat for agent id: "+strconv.Itoa(int(client.AgentID)), "err", err)
+		logger.Log("level", "err", "msg", "Failed to update heartbeat for agent id: "+strconv.Itoa(int(agentID)), "err", err)
 		return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, err
 	}
 

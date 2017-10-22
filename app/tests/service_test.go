@@ -4,212 +4,191 @@ package tests
 // gracefully ripped from https://github.com/hashicorp/hcl/blob/master/hcl/printer/printer_test.go
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
-
-	"github.com/go-kit/kit/metrics"
-
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
-	//"github.com/newtonsystems/agent-mgmt/app/utils"
 )
 
-//var logger = utils.GetLogger()
-
 var update = flag.Bool("update", false, "update golden files")
-
+var verbose = flag.Bool("verbose", false, "turn on more verbose output")
 var debug = flag.Bool("debug", false, "update golden files")
 
 type entry struct {
-	srvTestName, srvTestArgs, source, golden, description string
-	srvTestErr                                            error
+	testName    string             // An identifier test name e.g. getavailableagents
+	testArgs    []string           // A list of args for the service call
+	testHasErr  amerrors.ErrorType // The error expected by service call. Nil if no error is expected by the rpc call
+	source      string             // The source file that contains data to be inserted into mongo
+	compare     string             // A description of what we compare against the golden
+	golden      string             // The golden file
+	description string             // A useful description of what the test intends to accomplish
 }
 
-//const (
-//	dataDir = "./testdata"
-//)
+const (
+	//dataDir     = "./testdata"
+	mongoDBName = "test"
+)
 
 // Use go test -update to create/update the respective golden files.
 var data = []entry{
 	{
 		"getavailableagents",
-		"",
+		[]string{""},
+		0,
 		"getavailableagents.input",
+		"response agent IDs",
 		"getavailableagents.golden",
 		"A basic test of service's GetAvailableAgents()",
-		nil,
 	},
 	{
 		"getavailableagents",
-		"",
+		[]string{""},
+		0,
 		"getavailableagents_oldheartbeat.input",
+		"response agent IDs",
 		"getavailableagents_oldheartbeat.golden",
 		"A test to ensure heartbeats older than one minute are not included as available agents by service's GetAvailableAgents()",
-		nil,
 	},
 	{
 		"getavailableagents",
-		"",
+		[]string{""},
+		0,
 		"getavailableagents_futureheartbeat.input",
+		"response agent IDs",
 		"getavailableagents_futureheartbeat.golden",
 		"A test to ensure heartbeats newer than one minute are included as available agents by service's GetAvailableAgents()  (We accept future timestamps)",
-		nil,
 	},
 	{
 		"getavailableagents",
-		"",
+		[]string{""},
+		0,
 		"getavailableagents_minuteagoexactly.input",
+		"response agent IDs",
 		"getavailableagents_minuteagoexactly.golden",
 		"A test to ensure a heartbeat exactly a minute ago is included as an available agent by service's GetAvailableAgents()",
-		nil,
 	},
 	{
 		"getavailableagents",
-		"",
+		[]string{"10"},
+		0,
 		"getavailableagents_limit_results_10.input",
+		"response agent IDs",
 		"getavailableagents_limit_results_10.golden",
 		"A test to check there is a limit to the available agent ids returned by service's GetAvailableAgents()",
-		nil,
 	},
 	{
 		"getagentidfromref",
-		"ref001a",
+		[]string{"ref001a"},
+		0,
 		"getagentidfromref.input",
+		"response agent ID",
 		"getagentidfromref.golden",
 		"A basic test of service's GetAgentIDFromRef()",
-		nil,
 	},
 	{
 		"getagentidfromref",
-		"",
+		[]string{""},
+		amerrors.ErrAgentIDNotFound,
 		"getagentidfromref_empty.input",
+		"response agent ID",
 		"getagentidfromref_empty.golden",
-		"A test to check that we get an ErrAgentIDNotFound error when refID is empty returned by service's GetAgentIDFromRef()",
-		amerrors.ErrAgentIDNotFoundError(""),
+		"A test to check that we get an ErrAgentIDNotFound error when refID is empty and no phonesession exists returned by service's GetAgentIDFromRef()",
 	},
 	{
 		"getagentidfromref",
-		"refwrong",
+		[]string{""},
+		0,
+		"getagentidfromref.input",
+		"response agent ID",
+		"getagentidfromref_emptyexists.golden",
+		"A test to check that we get an ErrAgentIDNotFound error when refID is empty and no phonesession exists returned by service's GetAgentIDFromRef()",
+	},
+	{
+		"getagentidfromref",
+		[]string{"refwrong"},
+		amerrors.ErrAgentIDNotFound,
 		"getagentidfromref_wrongref.input",
+		"response agent ID",
 		"getagentidfromref_wrongref.golden",
 		"A test to check that we get an ErrAgentIDNotFound error when refID is incorrect returned by service's GetAgentIDFromRef()",
-		amerrors.ErrAgentIDNotFoundError(""),
 	},
 	{
 		"heartbeat",
-		"20",
+		[]string{"20"},
+		amerrors.ErrAgentNotFound,
 		"heartbeat.input",
+		"response status",
 		"heartbeat.golden",
 		"A basic test of service's HeartBeat()",
-		nil,
 	},
 }
 
-func clearAgentsCollection(sess models.Session) {
-	var i interface{}
-	sess.DB("test").C("agents").RemoveAll(i)
-	sess.DB("test").C("phonesessions").RemoveAll(i)
-}
-
-func insertAgentsIntoMongoFromInput(t *testing.T, session models.Session, srcFile []byte, source string) {
-	var agents []models.Agent
-
-	// Unmarshal JSON From File
-	json.Unmarshal(srcFile, &agents)
-
-	// Check we have found some input
-	if len(agents) == 0 {
-		var errMessage = "No input data found from " + source
-		_, file, line, _ := runtime.Caller(1)
-		logger.Log("info", "crit", "msg", errMessage)
-		fmt.Printf("\033[31m%s:%d: unexpected error: %s\033[39m\n\n", filepath.Base(file), line, errMessage)
-		t.FailNow()
-	}
-
-	// Insert into mongo
-	for _, agent := range agents {
-		err1 := session.DB("test").C("agents").Insert(agent)
-		if err1 != nil {
-			logger.Log("msg", "Could not insert input into mongo", "err", err1)
-			t.Error(err1)
-		}
-	}
-
-}
-
-func tGetAvailableAgents(t *testing.T, source string, s service.Service, session models.Session, src []byte) ([]byte, error) {
+// runSrvTest runs a specifc test based off testName we convert to bytes for possible writing
+func runSrvTest(t *testing.T, session models.Session, s service.Service, testName string, testArgs []string) ([]byte, error) {
 	var res []byte
+	var resErr error
+	ctx := context.Background()
 
-	insertAgentsIntoMongoFromInput(t, session, src, source)
-
-	agentIDs, err := s.GetAvailableAgents(context.Background(), session, "test", 10)
-
-	// Convert to bytes for possible writing
-	resString := strings.Join(agentIDs, ", ")
-	res = []byte(resString)
-
-	return res, err
-}
-
-func tGetAgentIDFromRef(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
-	var phoneSessions []models.PhoneSession
-	json.Unmarshal(src, &phoneSessions)
-
-	if len(phoneSessions) == 0 {
-		var errMessage = "No input data found from " + source
-		logger.Log("info", "crit", "msg", errMessage)
-		_, file, line, _ := runtime.Caller(1)
-		fmt.Printf("\033[31m%s:%d: unexpected error: %s\033[39m\n\n", filepath.Base(file), line, errMessage)
-		t.FailNow()
-	}
-
-	// Insert into mongo
-	for _, phoneSess := range phoneSessions {
-		fmt.Printf(fmt.Sprintf("\n%#v", phoneSess))
-		err := session.DB("test").C("phonesessions").Insert(phoneSess)
-		if err != nil {
-			logger.Log("msg", "Could not insert input into mongo", "err", err)
-			t.Error(err)
-			t.FailNow()
+	switch testName {
+	case "getavailableagents":
+		var limit int32
+		limit = 0
+		if testArgs[0] != "" {
+			limitInt, errConvert := strconv.Atoi(testArgs[0])
+			if errConvert != nil {
+				FailNowAt(t, errConvert.Error())
+			}
+			limit = int32(limitInt)
 		}
+
+		agentIDs, err := s.GetAvailableAgents(ctx, session, mongoDBName, limit)
+
+		// Style: this doesnt feel go like
+		if err == nil {
+			res = []byte(strings.Join(agentIDs, ", "))
+		}
+		resErr = err
+
+	case "getagentidfromref":
+		agentID, err := s.GetAgentIDFromRef(session, mongoDBName, testArgs[0])
+
+		if *verbose {
+			fmt.Printf("Response: " + fmt.Sprintf("%#v", agentID) + "\n")
+		}
+
+		res = []byte(strconv.Itoa(int(agentID)))
+		resErr = err
+
+	case "heartbeat":
+		agentID, errConvert := strconv.Atoi(testArgs[0])
+
+		if errConvert != nil {
+			FailNowAt(t, errConvert.Error())
+		}
+
+		status, err := s.HeartBeat(session, mongoDBName, int32(agentID))
+
+		res = []byte(strconv.Itoa(int(status)))
+		resErr = err
+
 	}
 
-	agentID, err := s.GetAgentIDFromRef(session, "test", srvTestArgs)
-	res := []byte(strconv.Itoa(int(agentID)))
-
-	return res, err
+	return res, resErr
 }
 
-func tHeartBeat(t *testing.T, source string, s service.Service, srvTestArgs string, session models.Session, src []byte) ([]byte, error) {
-	var res []byte
-
-	insertAgentsIntoMongoFromInput(t, session, src, source)
-
-	agentID, err := strconv.Atoi(srvTestArgs)
-
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-
-	agent := models.Agent{AgentID: int32(agentID)}
-	status, err := s.HeartBeat(session, "test", agent)
-	res = []byte(strconv.Itoa(int(status)))
-
-	return res, err
+// cleanUp removes everyfrom the database including all collections
+func cleanUp(session models.Session) {
+	session.DB(mongoDBName).DropDatabase()
 }
 
 func TestFiles(t *testing.T) {
@@ -225,52 +204,20 @@ func TestFiles(t *testing.T) {
 		return freezeTime
 	}
 
-	// TODO: Create a Mock Version or fix this
-	// (Not a priority at the moment)
-
-	var ints, chars, refs, beats metrics.Counter
-	{
-		// Business-level metrics.
-		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "integers_summed",
-			Help:      "Total count of integers summed via the Sum method.",
-		}, []string{})
-		chars = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "characters_concatenated",
-			Help:      "Total count of characters concatenated via the Concat method.",
-		}, []string{})
-		refs = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "agentmgmt",
-			Name:      "references_used",
-			Help:      "Total count of references used to get agent ID via the GetAgentIDFromRef method.",
-		}, []string{})
-		beats = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "agentmgmt",
-			Name:      "total_heartbeat_counts",
-			Help:      "Total count of heartbeats service call from the HeartBeat method.",
-		}, []string{})
-	}
-
 	// Create new service
-	s := service.NewService(logger, ints, chars, refs, beats)
+	s := service.NewService(logger, nil, nil, nil, nil)
 
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
-			check(t, s, moSession, e.srvTestName, e.srvTestArgs, source, golden, e.srvTestErr, e.description)
+			check(t, moSession, s, source, golden, e.compare, e.description, e.testName, e.testArgs, e.testHasErr)
 		})
-		clearAgentsCollection(moSession)
+		cleanUp(moSession)
 	}
 }
 
-func check(t *testing.T, srv service.Service, session models.Session, srvTestCase, srvTestArgs, source, golden string, srvTestErr error, description string) {
+func check(t *testing.T, session models.Session, srv service.Service, source, golden, compare, description, testName string, testArgs []string, testHasErr amerrors.ErrorType) {
 	src, err := ioutil.ReadFile(source)
 
 	if err != nil {
@@ -278,29 +225,26 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 		return
 	}
 
-	var res []byte
-	var srvError error
-	if srvTestCase == "getavailableagents" {
-		res, srvError = tGetAvailableAgents(t, source, srv, session, src)
-	} else if srvTestCase == "getagentidfromref" {
-		res, srvError = tGetAgentIDFromRef(t, source, srv, srvTestArgs, session, src)
-	} else if srvTestCase == "heartbeat" {
-		res, srvError = tHeartBeat(t, source, srv, srvTestArgs, session, src)
-	} else {
-		t.Error("test service call name '" + srvTestCase + "' is unknown")
-		return
-	}
+	// update mongo db with input data
+	InsertFixturesToDB(t, session, testName, source, src, verbose)
 
-	if srvError != nil {
-		if srvTestErr != nil && srvError != srvTestErr {
-			t.Error(srvError)
-			return
+	// run service call
+	res, err := runSrvTest(t, session, srv, testName, testArgs)
+
+	// is an error is expected? If so, we check it is the correct one
+	if err != nil {
+		if *verbose {
+			fmt.Printf("Error in response found: " + err.Error())
+			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(err, testHasErr)))
+		}
+		if testHasErr != 0 && !amerrors.Is(err, testHasErr) {
+			FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", err))
 		}
 	}
 
 	// update golden files if necessary
 	if *update {
-		if err := ioutil.WriteFile(golden, res, 0644); err != nil {
+		if werr := ioutil.WriteFile(golden, res, 0644); werr != nil {
 			t.Error(err)
 		}
 		return
@@ -308,13 +252,15 @@ func check(t *testing.T, srv service.Service, session models.Session, srvTestCas
 
 	// get golden
 	gld, err := ioutil.ReadFile(golden)
+	// TODO: want to remove eol from file length (this is a crap method needs bettering)
+	gld = bytes.Trim(gld, "\n\t")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	// formatted source and golden must be the same
-	if err := Diff(source, golden, description, res, gld); err != nil {
+	if err := Diff(compare, golden, description, res, gld); err != nil {
 		t.Error(err)
 		return
 	}

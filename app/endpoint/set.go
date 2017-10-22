@@ -153,9 +153,8 @@ func MakeGetAgentIDFromRefEndpoint(s service.Service, session models.Session, db
 // MakeGetAgentIDFromRefEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
 func MakeHeartBeatEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
-		//req := request.(HeartBeatRequest)
-		agent := models.Agent{AgentID: 10}
-		v, err := s.HeartBeat(session, db, agent)
+		req := request.(HeartBeatRequest)
+		v, err := s.HeartBeat(session, db, req.AgentId)
 		return HeartBeatResponse{Status: v, Message: err}, nil
 	}
 }
@@ -234,7 +233,7 @@ type GetAgentIDFromRefResponse struct {
 
 // HeartBeat()
 type HeartBeatRequest struct {
-	Agent models.Agent
+	AgentId int32
 }
 
 type HeartBeatResponse struct {

@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
-	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/agent-mgmt/app/service"
+	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
 )
@@ -40,8 +40,10 @@ func envString(env, fallback string) string {
 // Service Layer Mocking -------------------------------------------------------
 
 // MockService acts as a mock of service.Service
-type MockService struct{
+type MockService struct {
 	MockGetAvailableAgents func() ([]string, error)
+	MockGetAgentIDFromRef  func() (int32, error)
+	MockHeartBeat          func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
 }
 
 func NewMockService() service.Service {
@@ -65,15 +67,20 @@ func (fs MockService) GetAvailableAgents(ctx context.Context, session models.Ses
 }
 
 func (fs MockService) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	if fs.MockGetAgentIDFromRef != nil {
+		return fs.MockGetAgentIDFromRef()
+	}
 	return 0, nil
 }
 
-func (fs MockService) HeartBeat(session models.Session, db string, agent models.Agent) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+func (fs MockService) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+	if fs.MockHeartBeat != nil {
+		return fs.MockHeartBeat()
+	}
 	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, nil
 }
 
 // -----------------------------------------------------------------------------
-
 
 // MockSession satisfies Session and act as a mock of *mgo.session.
 type MockSession struct{}
@@ -161,6 +168,11 @@ func (db MockDatabase) C(name string) models.Collection {
 }
 
 // Mock service calls
+
+//AgentExists mocks models.AgentExists().
+func (db MockDatabase) AgentExists(agentID int32) (bool, error) {
+	return true, nil
+}
 
 //GetAgents mocks models.GetAgents().
 func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Agent, error) {

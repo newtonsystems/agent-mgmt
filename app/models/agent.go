@@ -5,11 +5,13 @@ package models
 
 import (
 	// "errors"
+
+	"strconv"
 	"time"
 
 	//"github.com/go-kit/kit/log"
 
-	//amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 
 	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"gopkg.in/mgo.v2/bson"
@@ -33,6 +35,21 @@ type Agent struct {
 }
 
 // Mongo Calls
+
+// HeartBeat updates LastHeartBeat with current time now
+func (db *MongoDatabase) AgentExists(agentID int32) (bool, error) {
+	count, err := db.C("agents").Find(bson.M{"agentid": agentID}).Count()
+
+	if err != nil {
+		return false, err
+	}
+
+	if count == 0 {
+		return false, amerrors.ErrAgentNotFoundError("failed to find an Agent(AgentID=" + strconv.Itoa(int(agentID)) + ")")
+	}
+
+	return true, nil
+}
 
 // HeartBeat updates LastHeartBeat with current time now
 func (db *MongoDatabase) HeartBeat(agentID int32) error {
