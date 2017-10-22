@@ -53,6 +53,9 @@ jobs:
             MONGO_EXTERNAL_SERVICE_HOST: localhost
             MONGO_EXTERNAL_SERVICE_PORT: 27017
           command: |
+            mkdir -p /data/db
+            mongod &
+            go get ./...
             # Make sure packages are up to date
             curl https://glide.sh/get | sh
             make update-install
@@ -130,12 +133,12 @@ workflows:
   version: 2
   dev_stage_envs:
     jobs:
-      - build
-          # filters:
-          #   branches:
-          #     only:
-          #       - featuretest
-          #       - master
+      - build:
+          filters:
+            branches:
+              only:
+                - featuretest
+                - master
       # - deploy_kubernetes_branch:
       #     filters:
       #       branches:
