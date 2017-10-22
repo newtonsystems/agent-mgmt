@@ -7,12 +7,12 @@
 version: 2
 jobs:
   build:
+    docker:
+      - image: newtonsystems/tools-docker-grpc-tools:0.2.3
     branches:
       only:
         - master
         - featuretest
-    docker:
-      - image: newtonsystems/tools-docker-grpc-tools:0.2.3
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
       TEST_REPORTS: /tmp/test-reports
