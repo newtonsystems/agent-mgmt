@@ -119,7 +119,12 @@ workflows:
   version: 2
   dev_stage_envs:
     jobs:
-      - build
+      - build:
+          filters:
+            branches:
+              only:
+                - featuretest
+                - master
       - deploy_kubernetes_branch:
           filters:
             branches:
