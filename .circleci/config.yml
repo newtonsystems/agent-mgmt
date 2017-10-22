@@ -9,10 +9,6 @@ jobs:
   build:
     docker:
       - image: newtonsystems/tools-docker-grpc-tools:0.2.3
-    branches:
-      only:
-        - master
-        - featuretest
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
       TEST_REPORTS: /tmp/test-reports
