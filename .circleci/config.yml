@@ -43,11 +43,11 @@ jobs:
             git submodule foreach git pull origin $CIRCLE_BRANCH
 
        - run:
-           name: Run Regression Tests (send test coverage to code climate)
-            environment:
-              MONGO_EXTERNAL_SERVICE_HOST: localhost
-              MONGO_EXTERNAL_SERVICE_PORT: 27017
-            command: |
+          name: Run Regression Tests (send test coverage to code climate)
+          environment:
+            MONGO_EXTERNAL_SERVICE_HOST: localhost
+            MONGO_EXTERNAL_SERVICE_PORT: 27017
+          command: |
             # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
             #./config/bin/run_tests.sh --code-climate
             mkdir -p $TEST_REPORTS
