@@ -7,10 +7,6 @@
 version: 2
 jobs:
   build:
-    branches:
-      only:
-        - master
-        - featuretest
     docker:
       - image: newtonsystems/tools-docker-grpc-tools:0.2.3
     environment:
