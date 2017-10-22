@@ -62,7 +62,7 @@ help:                        ##@other Show this help.
 #
 .PHONY: compile update-deps-featuretest update-deps-master install-deps-featuretest install-deps-master add-deps-master add-deps-featuretest
 
-compile:
+update-install:
 	@echo "$(INFO) Getting packages and building alpine go binary ..."
 	@if [ "$(CURRENT_BRANCH)" != "master" && "$(CURRENT_BRANCH)" != "featuretest" ]; then \
 		echo "$(INFO) for branch master " \
@@ -73,6 +73,9 @@ compile:
 		make update-deps-$(CURRENT_BRANCH); \
 		make install-deps-$(CURRENT_BRANCH); \
 	fi
+
+compile:
+	make update-install
 	make build-command
 
 
