@@ -9,9 +9,14 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/metrics"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/utils"
+	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	//"gopkg.in/mgo.v2/bson"
 )
 
@@ -31,17 +36,80 @@ func init() {
 type Service interface {
 	Sum(ctx context.Context, a, b int) (int, error)
 	Concat(ctx context.Context, a, b string) (string, error)
-	GetAvailableAgents(ctx context.Context, session models.Session, db string) ([]string, error)
+	GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error)
+	GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error)
+	HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+}
+
+// Elegantly ripped from https://github.com/letsencrypt/boulder/blob/f193137405a22057fe46a1e0e27f9d1c9e07de8b/grpc/errors.go
+// WrapError wraps the internal error types we use for transport across the gRPC
+// layer and appends an appropriate errortype to the gRPC trailer via the provided
+// context. errors.BoulderError error types are encoded using the grpc/metadata
+// in the context.Context for the RPC which is considered to be the 'proper'
+// method of encoding custom error types (grpc/grpc#4543 and grpc/grpc-go#478)
+func WrapError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if aerr, ok := err.(*amerrors.AgentMgmtError); ok {
+		// Ignoring the error return here is safe because if setting the metadata
+		// fails, we'll still return an error, but it will be interpreted on the
+		// other side as an InternalServerError instead of a more specific one.
+		logger.Log("msg", "wrapping is current working I think ", "type", int(aerr.Type))
+		_ = grpc.SetTrailer(ctx, metadata.Pairs("errortype", strconv.Itoa(int(aerr.Type))))
+		return grpc.Errorf(codes.Unknown, err.Error())
+	}
+	return grpc.Errorf(codes.Unknown, err.Error())
+}
+
+// unwrapError unwraps errors returned from gRPC client calls which were wrapped
+// with wrapError to their proper internal error type. If the provided metadata
+// object has an "errortype" field, that will be used to set the type of the
+// error.
+func UnWrapError(err error, md metadata.MD) error {
+	if err == nil {
+		return nil
+	}
+	logger.Log("level", "debug", "msg", "UnWrapError()")
+	if errTypeStrs, ok := md["errortype"]; ok {
+
+		unwrappedErr := grpc.ErrorDesc(err)
+		if len(errTypeStrs) != 1 {
+			return amerrors.InternalServerError(
+				"multiple errorType metadata, wrapped error %q",
+				unwrappedErr,
+			)
+		}
+
+		errType, decErr := strconv.Atoi(errTypeStrs[0])
+		if decErr != nil {
+			return amerrors.InternalServerError(
+				"failed to decode error type, decoding error %q, wrapped error %q",
+				decErr,
+				unwrappedErr,
+			)
+		}
+		return amerrors.New(amerrors.ErrorType(errType), unwrappedErr)
+	}
+	logger.Log("level", "debug", "msg", "Failed to find errortype")
+	return err
 }
 
 // New returns a basic Service with all of the expected middlewares wired in.
-func NewService(logger log.Logger, ints, chars metrics.Counter) Service {
+func NewService(logger log.Logger, ints, chars, refs, beats metrics.Counter) Service {
 
 	var svc Service
 	{
 		svc = NewBasicService()
-		svc = LoggingMiddleware(logger)(svc)
-		svc = InstrumentingMiddleware(ints, chars)(svc)
+
+		if logger != nil {
+			svc = LoggingMiddleware(logger)(svc)
+		}
+
+		if ints != nil && chars != nil && refs != nil && beats != nil {
+			svc = InstrumentingMiddleware(ints, chars, refs, beats)(svc)
+		}
+
 	}
 	return svc
 }
@@ -58,6 +126,10 @@ var (
 
 	// ErrMaxSizeExceeded protects the Concat method.
 	ErrMaxSizeExceeded = errors.New("result exceeds maximum size")
+
+	// ErrAgentIDNotFound if we cannot find an agent ID from an reference ID
+	//ErrAgentIDNotFound = errors.New("failed to find an Agent from ref id")
+	//ErrAgentIDNotFound.metadata = metadata.
 )
 
 // NewBasicService returns a naïve, stateless implementation of Service.
@@ -105,17 +177,59 @@ func TBD() {
 
 }
 
-func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string) ([]string, error) {
+// HeartBeat() updates heartbeat for given agent id (LastHeartBeat)
+func (s basicService) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+
+	logger.Log("level", "debug", "msg", "Updating heartbeat for agent ID: "+strconv.Itoa(int(agentID)))
+
+	exists, err := session.DB(db).AgentExists(agentID)
+
+	if !exists {
+		logger.Log("level", "err", "err", err)
+		return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, err
+	}
+
+	err = session.DB(db).HeartBeat(agentID)
+
+	if err != nil {
+		logger.Log("level", "err", "msg", "Failed to update heartbeat for agent id: "+strconv.Itoa(int(agentID)), "err", err)
+		return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, err
+	}
+
+	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, err
+}
+
+// TODO: Will need to create some sort of cleanup for the database?
+func (s basicService) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	// Get Agent ID from session data
+	logger.Log("level", "debug", "msg", "Getting available agent ID from ref ID: "+refID)
+
+	agentID, err := session.DB(db).GetAgentIDFromRef(refID)
+
+	if agentID == 0 {
+		logger.Log("level", "warn", "msg", "Failed to get agent ID from ref ID", "err", err)
+		return 0, amerrors.ErrAgentIDNotFoundError("failed to find an Agent from ref id")
+	}
+
+	if err != nil {
+		logger.Log("level", "err", "msg", "Failed to get agent ID from ref ID", "err", err)
+		return 0, err
+	}
+
+	return agentID, err
+}
+
+func (s basicService) GetAvailableAgents(_ context.Context, session models.Session, db string, limit int32) ([]string, error) {
 	// Find available agents from Mongo.
 	// models.Agents are considered available if the heartbeat has been received in
 	// the last minute (heartbeats should be every 30 secs)
-	logger.Log("level", "debug", "msg", "Getting available agents from mongo")
+	logger.Log("level", "debug", "msg", "Getting available agents from mongo with limit: "+strconv.Itoa(int(limit)))
 
 	minuteAgoDate := NowFunc().Add(-time.Minute)
 	logger.Log("level", "debug", "msg", "Getting available agents with heartbeats no older than "+minuteAgoDate.Format("01/02/2006 03:04:05"))
 
 	var agentIDs []string
-	agents, err := session.DB(db).GetAgents(minuteAgoDate)
+	agents, err := session.DB(db).GetAgents(minuteAgoDate, limit)
 
 	if err != nil {
 		logger.Log("level", "err", "msg", "Failed to get agents", "err", err)

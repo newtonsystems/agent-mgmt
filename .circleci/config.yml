@@ -1,6 +1,7 @@
 #
 # Circle CI 2.0 Docs
-# 
+#
+#
 # For info, see: https://circleci.com/docs/2.0/
 #
 
@@ -8,7 +9,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: newtonsystems/tools-docker-grpc-tools:0.2.3
+      - image: newtonsystems/tools-docker-grpc-tools:0.2.4
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
       TEST_REPORTS: /tmp/test-reports
@@ -42,17 +43,24 @@ jobs:
             git submodule update --init
             git submodule foreach git pull origin $CIRCLE_BRANCH
 
-      # - run:
-      #     name: Run Regression Tests (send test coverage to code climate)
-      #     command: |
-      #       # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
-      #       ./config/bin/run_tests.sh --code-climate
-      #       mkdir -p $TEST_REPORTS
-      #       cp nosetests.xml $TEST_REPORTS/nosetests.xml
+      - run:
+          name: Run Regression Tests (send test coverage to code climate)
+          environment:
+            MONGO_EXTERNAL_SERVICE_HOST: localhost
+            MONGO_EXTERNAL_SERVICE_PORT: 27017
+          command: |
+            # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
+            #./config/bin/run_tests.sh --code-climate
+            mkdir -p $TEST_REPORTS
+            trap "go-junit-report <${TEST_REPORTS}/go-test.out > ${TEST_REPORTS}/go-test-report.xml" EXIT
+            go test -v $(go list ./... ) | tee ${TEST_REPORTS}/go-test.out
 
       - run:
-          name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master)) 
+          name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))
           command: |
+            # Make sure packages are up to date
+            curl https://glide.sh/get | sh
+            make update-install
             # Cannot use volumes so we cant use 'make build-build'
             docker build -t $DOCKER_PROJECT_NAME:compile -f Dockerfile.build .
             docker run --name compiler $DOCKER_PROJECT_NAME:compile
@@ -71,56 +79,61 @@ jobs:
           path: /tmp/test-reports
 
 
-  deploy_kubernetes_branch:
-    docker:
-      - image: newtonsystems/tools-docker-grpc-tools:0.2.3
-    environment:
-      DOCKER_PROJECT_NAME: agent-mgmt
-    working_directory: ~/agent-mgmt
-    steps:
-      - checkout
-      - setup_remote_docker
-
-      - run:
-          name: Clone dev-utils repo (Development utility scripts/tools)
-          command: |
-            cd ~/
-            git clone -b master https://github.com/newtonsystems/dev-utils.git
-
-      - run:
-          name: Clone devops repo (Update the submodule to the latest change)
-          command: |
-            cd ~/
-            git clone -b $CIRCLE_BRANCH https://github.com/newtonsystems/devops.git
-            cd devops
-            git submodule sync
-            git submodule update --init
-            git submodule foreach git pull origin $CIRCLE_BRANCH
-
-      - run: 
-          name: Update kubernetes image - agent-mgmt deployment
-          command: |
-            mkdir -p $HOME/.kube
-            mv ~/dev-utils/config/k8s/kube.config $HOME/.kube/config
-            # trigger update
-            kubectl replace -f /root/devops/k8s/deploy/$CIRCLE_BRANCH/agent-mgmt-deployment.yml --namespace $CIRCLE_BRANCH --record
-            kubectl rollout status deployment agent-mgmt --namespace $CIRCLE_BRANCH
-            # Delete to repull image (restart)
-            kubectl delete pod `kubectl get pods -o wide --namespace $CIRCLE_BRANCH | grep $DOCKER_PROJECT_NAME | cut -d ' ' -f1`  --namespace $CIRCLE_BRANCH
-            sleep 60
-            # Add health check  (healthz)
-
+  # deploy_kubernetes_branch:
+  #   docker:
+  #     - image: newtonsystems/tools-docker-grpc-tools:0.2.3
+  #   environment:
+  #     DOCKER_PROJECT_NAME: agent-mgmt
+  #   working_directory: ~/agent-mgmt
+  #   steps:
+  #     - checkout
+  #     - setup_remote_docker
+  #
+  #     - run:
+  #         name: Clone dev-utils repo (Development utility scripts/tools)
+  #         command: |
+  #           cd ~/
+  #           git clone -b master https://github.com/newtonsystems/dev-utils.git
+  #
+  #     - run:
+  #         name: Clone devops repo (Update the submodule to the latest change)
+  #         command: |
+  #           cd ~/
+  #           git clone -b $CIRCLE_BRANCH https://github.com/newtonsystems/devops.git
+  #           cd devops
+  #           git submodule sync
+  #           git submodule update --init
+  #           git submodule foreach git pull origin $CIRCLE_BRANCH
+  #
+  #     - run:
+  #         name: Update kubernetes image - agent-mgmt deployment
+  #         command: |
+  #           mkdir -p $HOME/.kube
+  #           mv ~/dev-utils/config/k8s/kube.config $HOME/.kube/config
+  #           # trigger update
+  #           kubectl replace -f /root/devops/k8s/deploy/$CIRCLE_BRANCH/agent-mgmt-deployment.yml --namespace $CIRCLE_BRANCH --record
+  #           kubectl rollout status deployment agent-mgmt --namespace $CIRCLE_BRANCH
+  #           # Delete to repull image (restart)
+  #           kubectl delete pod `kubectl get pods -o wide --namespace $CIRCLE_BRANCH | grep $DOCKER_PROJECT_NAME | cut -d ' ' -f1`  --namespace $CIRCLE_BRANCH
+  #           sleep 60
+  #           # Add health check  (healthz)
+  #
 
 workflows:
   version: 2
   dev_stage_envs:
     jobs:
-      - build
-      - deploy_kubernetes_branch:
-          filters:
-            branches:
-              only: 
-                - featuretest
-                - master
+      - build:
+          # filters:
+          #   branches:
+          #     only:
+          #       - featuretest
+          #       - master
+      # - deploy_kubernetes_branch:
+      #     filters:
+      #       branches:
+      #         only:
+      #           - featuretest
+      #           - master
           requires:
             - build

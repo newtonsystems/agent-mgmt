@@ -5,6 +5,7 @@ package tests
 // mocks, test harnesses, helpers, etc.
 
 import (
+	"context"
 	"encoding/json"
 	stdlog "log"
 	"os"
@@ -16,8 +17,9 @@ import (
 	"time"
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
+	"github.com/newtonsystems/agent-mgmt/app/service"
 	"github.com/newtonsystems/agent-mgmt/app/utils"
-
+	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
 )
 
@@ -34,6 +36,51 @@ func envString(env, fallback string) string {
 	}
 	return e
 }
+
+// Service Layer Mocking -------------------------------------------------------
+
+// MockService acts as a mock of service.Service
+type MockService struct {
+	MockGetAvailableAgents func() ([]string, error)
+	MockGetAgentIDFromRef  func() (int32, error)
+	MockHeartBeat          func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+}
+
+func NewMockService() service.Service {
+	return MockService{}
+}
+
+func (fs MockService) Sum(ctx context.Context, a, b int) (int, error) {
+	return 0, nil
+}
+
+func (fs MockService) Concat(ctx context.Context, a, b string) (string, error) {
+	return "", nil
+}
+
+func (fs MockService) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error) {
+	var strNil []string
+	if fs.MockGetAvailableAgents != nil {
+		return fs.MockGetAvailableAgents()
+	}
+	return strNil, nil
+}
+
+func (fs MockService) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+	if fs.MockGetAgentIDFromRef != nil {
+		return fs.MockGetAgentIDFromRef()
+	}
+	return 0, nil
+}
+
+func (fs MockService) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+	if fs.MockHeartBeat != nil {
+		return fs.MockHeartBeat()
+	}
+	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, nil
+}
+
+// -----------------------------------------------------------------------------
 
 // MockSession satisfies Session and act as a mock of *mgo.session.
 type MockSession struct{}
@@ -122,8 +169,13 @@ func (db MockDatabase) C(name string) models.Collection {
 
 // Mock service calls
 
+//AgentExists mocks models.AgentExists().
+func (db MockDatabase) AgentExists(agentID int32) (bool, error) {
+	return true, nil
+}
+
 //GetAgents mocks models.GetAgents().
-func (db MockDatabase) GetAgents(timestamp time.Time) ([]models.Agent, error) {
+func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Agent, error) {
 	var agents []models.Agent
 	source := filepath.Join(dataDir, "get_agents.json")
 
@@ -135,6 +187,21 @@ func (db MockDatabase) GetAgents(timestamp time.Time) ([]models.Agent, error) {
 	json.Unmarshal(src, &agents)
 
 	return agents, nil
+}
+
+//GetAgentIDFromRef mocks models.GetAgents().
+func (db MockDatabase) GetAgentIDFromRef(refID string) (int32, error) {
+	return 0, nil
+}
+
+//HeartBeat mocks models.GetAgents().
+func (db MockDatabase) HeartBeat(agentID int32) error {
+	return nil
+}
+
+//DropDatabase mocks db.DropDatabase().
+func (db MockDatabase) DropDatabase() error {
+	return nil
 }
 
 // Create a real mongo connection for tests
