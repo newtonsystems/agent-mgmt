@@ -46,7 +46,7 @@ jobs:
             git submodule update --init
             git submodule foreach git pull origin $CIRCLE_BRANCH
 
-       - run:
+      - run:
           name: Run Regression Tests (send test coverage to code climate)
           environment:
             MONGO_EXTERNAL_SERVICE_HOST: localhost
