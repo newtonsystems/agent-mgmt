@@ -1,12 +1,16 @@
 #
 # Circle CI 2.0 Docs
-# 
+#
 # For info, see: https://circleci.com/docs/2.0/
 #
 
 version: 2
 jobs:
   build:
+    branches:
+      only:
+        - master
+        - featuretest
     docker:
       - image: newtonsystems/tools-docker-grpc-tools:0.2.3
     environment:
@@ -51,7 +55,7 @@ jobs:
       #       cp nosetests.xml $TEST_REPORTS/nosetests.xml
 
       - run:
-          name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master)) 
+          name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))
           command: |
             # Cannot use volumes so we cant use 'make build-build'
             docker build -t $DOCKER_PROJECT_NAME:compile -f Dockerfile.build .
@@ -97,7 +101,7 @@ jobs:
             git submodule update --init
             git submodule foreach git pull origin $CIRCLE_BRANCH
 
-      - run: 
+      - run:
           name: Update kubernetes image - agent-mgmt deployment
           command: |
             mkdir -p $HOME/.kube
@@ -119,7 +123,7 @@ workflows:
       - deploy_kubernetes_branch:
           filters:
             branches:
-              only: 
+              only:
                 - featuretest
                 - master
           requires:
