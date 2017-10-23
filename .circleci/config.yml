@@ -71,11 +71,11 @@ jobs:
             # Make sure packages are up to date
             curl https://glide.sh/get | sh
             make update-install
-            # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
+            # Can't run tests inside docker (docker volumes not supported + code climate needs git repo info)
             #./config/bin/run_tests.sh --code-climate
             mkdir -p $TEST_REPORTS
             trap "go-junit-report <${TEST_REPORTS}/go-test.out > ${TEST_REPORTS}/go-test-report.xml" EXIT
-            go test -v ./app/ ./app/models/ ./app/tests | tee ${TEST_REPORTS}/go-test.out
+            make check | tee ${TEST_REPORTS}/go-test.out
 
       - run:
           name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))

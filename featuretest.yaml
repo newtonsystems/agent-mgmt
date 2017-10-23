@@ -23,6 +23,7 @@ import:
 - package: github.com/gorilla/mux
   version: ^1.4.0
 - package: github.com/newtonsystems/grpc_types
+  version: featuretest
   subpackages:
   - go/grpc_types
 - package: github.com/opentracing/opentracing-go
