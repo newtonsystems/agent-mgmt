@@ -51,6 +51,7 @@ jobs:
       - run:
           name: Waiting for Mongo to be ready
           command: |
+            apt-get -y install netcat
             for i in `seq 1 10`;
             do
               nc -z localhost 27017 && echo Success && exit 0
