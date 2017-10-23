@@ -191,6 +191,21 @@ func cleanUp(session models.Session) {
 	session.DB(mongoDBName).DropDatabase()
 }
 
+// cleanUpCollection removes all items from a collection
+func cleanUpCollection(session models.Session, testName string) {
+	var i interface{}
+	var collection string
+	switch testName {
+	case "getavailableagents":
+		fallthrough
+	case "heartbeat":
+		collection = "agents"
+	case "getagentidfromref":
+		collection = "phonesessions"
+	}
+	session.DB(mongoDBName).C(collection).RemoveAll(i)
+}
+
 func TestFiles(t *testing.T) {
 
 	// Initialise mongo connection
@@ -213,8 +228,9 @@ func TestFiles(t *testing.T) {
 		t.Run(e.source, func(t *testing.T) {
 			check(t, moSession, s, source, golden, e.compare, e.description, e.testName, e.testArgs, e.testHasErr)
 		})
-		cleanUp(moSession)
+		cleanUpCollection(moSession, e.testName)
 	}
+	cleanUp(moSession)
 }
 
 func check(t *testing.T, session models.Session, srv service.Service, source, golden, compare, description, testName string, testArgs []string, testHasErr amerrors.ErrorType) {
