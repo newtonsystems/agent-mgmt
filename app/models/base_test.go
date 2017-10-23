@@ -98,7 +98,7 @@ func hasCountChanged(t *testing.T, expectError bool, collection string, prevCoun
 
 func TestCheckCollectionsUniqueness(t *testing.T) {
 	// initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug)
+	moSession := tests.CreateTestMongoConnection(*debug, true)
 	defer moSession.Refresh()
 	defer moSession.Close()
 

@@ -191,6 +191,10 @@ serve-fast: restart-fast
 			make restart-fast; \
 		done
 
+################ Circleci usefulness
+preparedb:
+	go run preparedb.go
+
 #
 # Run tests (outside docker)
 #

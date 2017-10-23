@@ -206,7 +206,7 @@ func (db MockDatabase) DropDatabase() error {
 
 // Create a real mongo connection for tests
 // set to "test" database
-func CreateTestMongoConnection(debug bool) models.Session {
+func CreateTestMongoConnection(debug bool, prepare bool) models.Session {
 	// Initialise mongodb connection and logger
 	// Create a session which maintains a pool of socket connections to our MongoDB.
 	var mongoExternalHost = envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017")
@@ -245,8 +245,10 @@ func CreateTestMongoConnection(debug bool) models.Session {
 	session.SetSocketTimeout(10 * time.Second)
 
 	// Prepare database
+	if prepare {
+	}
 	models.PrepareDB(session, "test", logger)
-
+	//	}
 	return session
 }
 
