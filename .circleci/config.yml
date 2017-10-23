@@ -43,17 +43,27 @@ jobs:
             git submodule update --init
             git submodule foreach git pull origin $CIRCLE_BRANCH
 
+      # Normally, this step would be in a custom primary image;
+      # we've added it here for the sake of explanation.
+      - run: go get github.com/jstemmer/go-junit-report
+
       - run:
           name: Run Regression Tests (send test coverage to code climate)
           environment:
             MONGO_EXTERNAL_SERVICE_HOST: localhost
             MONGO_EXTERNAL_SERVICE_PORT: 27017
           command: |
+            mkdir -p /data/db
+            mongod &
+            go get ./...
+            # Make sure packages are up to date
+            curl https://glide.sh/get | sh
+            make update-install
             # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
             #./config/bin/run_tests.sh --code-climate
             mkdir -p $TEST_REPORTS
             trap "go-junit-report <${TEST_REPORTS}/go-test.out > ${TEST_REPORTS}/go-test-report.xml" EXIT
-            go test -v $(go list ./... ) | tee ${TEST_REPORTS}/go-test.out
+            go test -v ./app/ ./app/models/ ./app/tests | tee ${TEST_REPORTS}/go-test.out
 
       - run:
           name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))
@@ -123,7 +133,7 @@ workflows:
   version: 2
   dev_stage_envs:
     jobs:
-      - build:
+      - build
           # filters:
           #   branches:
           #     only:
@@ -135,5 +145,5 @@ workflows:
       #         only:
       #           - featuretest
       #           - master
-          requires:
-            - build
+          # requires:
+          #   - build
