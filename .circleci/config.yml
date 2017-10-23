@@ -16,7 +16,7 @@ jobs:
       CODECLIMATE_REPO_TOKEN: 9b5bddb06418a3c448e2b90c01dbd8e5ac5971a0da4dcb5cc4484dd79691f60d
       PYTHON_PACKAGE_LOCATION: ~/
       KUBECONFIG: ~/dev-utils/config/k8s/kube.config
-    working_directory: ~/agent-mgmt
+    working_directory: /go/src/github.com/newtonsystems/agent-mgmt
     steps:
       - checkout
       - setup_remote_docker
