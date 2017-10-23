@@ -10,13 +10,14 @@ jobs:
   build:
     docker:
       - image: newtonsystems/tools-docker-grpc-tools:0.2.4
+      - image: newtonsystems/tools-docker-mongo:0.1.0
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
       TEST_REPORTS: /tmp/test-reports
       CODECLIMATE_REPO_TOKEN: 9b5bddb06418a3c448e2b90c01dbd8e5ac5971a0da4dcb5cc4484dd79691f60d
       PYTHON_PACKAGE_LOCATION: ~/
       KUBECONFIG: ~/dev-utils/config/k8s/kube.config
-    working_directory: ~/agent-mgmt
+    working_directory: /go/src/github.com/newtonsystems/agent-mgmt
     steps:
       - checkout
       - setup_remote_docker
@@ -48,22 +49,33 @@ jobs:
       - run: go get github.com/jstemmer/go-junit-report
 
       - run:
+          name: Waiting for Mongo to be ready
+          command: |
+            apt-get -y install netcat
+            for i in `seq 1 10`;
+            do
+              nc -z localhost 27017 && echo Success && exit 0
+              echo -n .
+              sleep 1
+            done
+            echo Failed waiting for Mongo && exit 1
+
+      - run:
           name: Run Regression Tests (send test coverage to code climate)
           environment:
             MONGO_EXTERNAL_SERVICE_HOST: localhost
             MONGO_EXTERNAL_SERVICE_PORT: 27017
           command: |
-            mkdir -p /data/db
-            mongod &
+            #echo Failed waiting for Mongo && exit 1
             go get ./...
             # Make sure packages are up to date
             curl https://glide.sh/get | sh
             make update-install
-            # Can't run make check FORCE_IGNORE_PREQ_TEST=true (docker volumes not supported + code climate needs git repo info)
+            # Can't run tests inside docker (docker volumes not supported + code climate needs git repo info)
             #./config/bin/run_tests.sh --code-climate
             mkdir -p $TEST_REPORTS
             trap "go-junit-report <${TEST_REPORTS}/go-test.out > ${TEST_REPORTS}/go-test-report.xml" EXIT
-            go test -v ./app/ ./app/models/ ./app/tests | tee ${TEST_REPORTS}/go-test.out
+            make check | tee ${TEST_REPORTS}/go-test.out
 
       - run:
           name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))
@@ -133,12 +145,12 @@ workflows:
   version: 2
   dev_stage_envs:
     jobs:
-      - build
-          # filters:
-          #   branches:
-          #     only:
-          #       - featuretest
-          #       - master
+      - build:
+          filters:
+            branches:
+              only:
+                - featuretest
+                - master
       # - deploy_kubernetes_branch:
       #     filters:
       #       branches:

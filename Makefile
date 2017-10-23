@@ -1,7 +1,7 @@
 #
 # Makefile
 #
-# Phone Channel
+# Agent Management Service
 # TODO: Need some sort of generic makefile for go services
 #
 
@@ -191,8 +191,16 @@ serve-fast: restart-fast
 			make restart-fast; \
 		done
 
+################ Circleci usefulness
+preparedb:
+	go run preparedb.go
 
-
+#
+# Run tests (outside docker)
+#
+check:
+	@echo "$(INFO) Running go tests ..."
+	go test -v ./app/ ./app/models/ ./app/tests
 
 #
 # Run Commands (Black Box)

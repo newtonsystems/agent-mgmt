@@ -1,5 +1,4 @@
-# agent-mgmt
-
+# agent-mgmt Agent Management Service
 
 [![](https://images.microbadger.com/badges/image/newtonsystems/tools-agent-mgmt:0.2.2.svg)](https://microbadger.com/images/newtonsystems/tools-agent-mgmt:0.2.2 "Get your own image badge on microbadger.com")
 
@@ -25,10 +24,10 @@ curl -H "Content-Type: application/json" -X POST -d '{"Name":"abc"}' http://`min
 ```
 
 
-curl -H "Content-Type: application/json" -X POST -d '{"Name":"abc"}' http://`minikube ip`:32000/sayhello 
+curl -H "Content-Type: application/json" -X POST -d '{"Name":"abc"}' http://`minikube ip`:32000/sayhello
 
 
-## How to test a localhost with the outside work 
+## How to test a localhost with the outside work
 
 Sometimes this service will need to connect to the outside world when working locally for testing etc.
 
@@ -43,7 +42,7 @@ ngrok http localhost:50000
 
 
 ## How to do a release
-- Make sure you are using docker-utils 
+- Make sure you are using docker-utils
 i.e.
 
 ```bash
@@ -58,4 +57,4 @@ build-tag-push-dockerfile.py  --image "newtonsystems/tools-agent-mgmt" --version
 
 ## Future
 
-- Use docker when in development 
+- Use docker when in development

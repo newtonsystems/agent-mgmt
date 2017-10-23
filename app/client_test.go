@@ -375,7 +375,7 @@ func TestGRPCServerClient(t *testing.T) {
 	}
 
 	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug)
+	moSession := tests.CreateTestMongoConnection(*debug, true)
 	//defer moSession.Refresh()
 	//defer moSession.Close()
 
@@ -437,7 +437,7 @@ func TestGRPCServerClient(t *testing.T) {
 // TestGRPCQueryError tests the server against query errors
 func TestGRPCQueryError(t *testing.T) {
 	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug)
+	moSession := tests.CreateTestMongoConnection(*debug, true)
 	defer moSession.Refresh()
 	defer moSession.Close()
 

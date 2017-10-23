@@ -194,7 +194,7 @@ func cleanUp(session models.Session) {
 func TestFiles(t *testing.T) {
 
 	// Initialise mongo connection
-	moSession := CreateTestMongoConnection(*debug)
+	moSession := CreateTestMongoConnection(*debug, true)
 	defer moSession.Refresh()
 	defer moSession.Close()
 
