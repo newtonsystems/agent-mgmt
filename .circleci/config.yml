@@ -48,25 +48,21 @@ jobs:
       - run: go get github.com/jstemmer/go-junit-report
 
       - run:
-          name: Waiting for Mongo to be ready
+          name: Waiting for Mongo to be ready & Run Regression Tests (send test coverage to code climate)
+          environment:
+            MONGO_EXTERNAL_SERVICE_HOST: localhost
+            MONGO_EXTERNAL_SERVICE_PORT: 27017
           command: |
             mkdir -p /data/db
             mongod &
             apt-get -y install netcat
             for i in `seq 1 10`;
             do
-              nc -z localhost 27017 && echo Success && exit 0
+              nc -z localhost 27017 && echo Success && beak
               echo -n .
               sleep 1
             done
-            echo Failed waiting for Mongo && exit 1
-
-      - run:
-          name: Run Regression Tests (send test coverage to code climate)
-          environment:
-            MONGO_EXTERNAL_SERVICE_HOST: localhost
-            MONGO_EXTERNAL_SERVICE_PORT: 27017
-          command: |
+            #echo Failed waiting for Mongo && exit 1
             go get ./...
             # Make sure packages are up to date
             curl https://glide.sh/get | sh
