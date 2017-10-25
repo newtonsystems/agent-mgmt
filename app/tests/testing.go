@@ -189,6 +189,11 @@ func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Age
 	return agents, nil
 }
 
+// AddTask mocks models.AddTask().
+func (db MockDatabase) AddTask(custID int64, agentIDs []int32) (int32, error) {
+	return 0, nil
+}
+
 //GetAgentIDFromRef mocks models.GetAgents().
 func (db MockDatabase) GetAgentIDFromRef(refID string) (int32, error) {
 	return 0, nil

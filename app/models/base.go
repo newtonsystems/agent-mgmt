@@ -15,6 +15,7 @@ import (
 
 	//"github.com/spf13/viper"
 	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type mongokey string
@@ -57,6 +58,7 @@ func (d MongoDatabase) C(name string) Collection {
 // (currently MongoDatabase).
 type DataLayer interface {
 	C(name string) Collection
+	AddTask(custID int64, agentIDs []int32) (int32, error)
 	AgentExists(agentID int32) (bool, error)
 	GetAgents(timestamp time.Time, limit int32) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
@@ -143,6 +145,28 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 	return session, mongoLogger
 }
 
+type count struct {
+	ID  string `bson:"_id"`
+	Seq int32  `bson:"seq"`
+}
+
+// GetNextSequence returns the next sequence for 'name'
+func GetNextSequence(db MongoDatabase, name string) int32 {
+	var doc count
+	change := mgo.Change{
+		Update:    bson.M{"$inc": bson.M{"n": 1}},
+		ReturnNew: true,
+	}
+
+	_, err := db.C("counters").Find(bson.M{}).Apply(change, &doc)
+
+	if err != nil {
+		panic("Creation of next sequence failed for " + name)
+	}
+
+	return doc.Seq
+}
+
 // PrepareDB ensure presence of persistent and immutable data in the DB.
 func PrepareDB(session Session, db string, logger log.Logger) {
 	indexes := make(map[string]mgo.Index)
@@ -166,4 +190,11 @@ func PrepareDB(session Session, db string, logger log.Logger) {
 		}
 	}
 	logger.Log("Prepared database indexes.")
+
+	logger.Log("level", "info", "msg", "Setting up counters ...")
+	logger.Log("level", "debug", "msg", "Setting up taskid")
+	session.DB(db).C("counters").Insert(bson.M{
+		"_id": "taskid",
+		"seq": 1,
+	})
 }

@@ -1,5 +1,5 @@
 hash: 99c2213d8a966d813541a7cdf52ef04b36592d14f71a7d455642fb4cb5d8dfcb
-updated: 2017-10-22T15:38:53.388375+01:00
+updated: 2017-10-24T19:46:18.037327+01:00
 imports:
 - name: github.com/afex/hystrix-go
   version: f118cd938f786d24f46cc307981d8f63b7951020
@@ -58,7 +58,7 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/newtonsystems/grpc_types
-  version: 21c1991ba328d6d62fb540f889cc07cc6ec23d38
+  version: 82c7ce77271028643a75fbcf609d2db3fd250759
   subpackages:
   - go/grpc_types
 - name: github.com/opentracing/opentracing-go
