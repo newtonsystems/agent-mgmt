@@ -58,7 +58,7 @@ func (d MongoDatabase) C(name string) Collection {
 // (currently MongoDatabase).
 type DataLayer interface {
 	C(name string) Collection
-	AddTask(custID int64, agentIDs []int32) (int32, error)
+	AddTask(custID int32, agentIDs []int32) (int32, error)
 	AgentExists(agentID int32) (bool, error)
 	GetAgents(timestamp time.Time, limit int32) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
@@ -145,20 +145,20 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 	return session, mongoLogger
 }
 
-type count struct {
+type Count struct {
 	ID  string `bson:"_id"`
 	Seq int32  `bson:"seq"`
 }
 
 // GetNextSequence returns the next sequence for 'name'
 func GetNextSequence(db MongoDatabase, name string) int32 {
-	var doc count
+	var doc Count
 	change := mgo.Change{
-		Update:    bson.M{"$inc": bson.M{"n": 1}},
+		Update:    bson.M{"$inc": bson.M{"seq": 1}},
 		ReturnNew: true,
 	}
 
-	_, err := db.C("counters").Find(bson.M{}).Apply(change, &doc)
+	_, err := db.C("counters").Find(bson.M{"_id": name}).Apply(change, &doc)
 
 	if err != nil {
 		panic("Creation of next sequence failed for " + name)

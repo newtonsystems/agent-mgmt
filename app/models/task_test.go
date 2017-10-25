@@ -6,70 +6,132 @@ import (
 	"fmt"
 	"testing"
 	"testing/quick"
+	"reflect"
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/tests"
 	"gopkg.in/mgo.v2/bson"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 )
 
-// func TestAddingExample(t *testing.T) {
-// 	if add(3, 2) != 5 {
-// 		t.Error("3 plus 2 is 5")
-// 	}
-// }
-//
-// func TestAddingZeroMakesNoDifference(t *testing.T) {
-// 	assertion := func(x int) bool {
-// 		return add(x, 0) == x
-// 	}
-//
-// 	if err := quick.Check(assertion, nil); err != nil {
-// 		t.Error(err)
-// 	}
-// }
-//
-// func TestAssociativity(t *testing.T) {
-// 	assertion := func(x, y, z int) bool {
-// 		return add(add(x, y), z) == add(add(z, y), x)
-// 	}
-//
-// 	if err := quick.Check(assertion, nil); err != nil {
-// 		t.Error(err)
-// 	}
-// }
+const (
+	mongoDBName = "test"
+)
 
-func TestCustIDStaysSame(t *testing.T) {
-	moSession := tests.CreateTestMongoConnection(*debug, true)
+func TestAddTaskCustIDStaysSame(t *testing.T) {
+	moSession := tests.CreateTestMongoConnection(false, true)
 	defer moSession.Refresh()
 	defer moSession.Close()
-
-	var i interface{}
-	moSession.DB(mongoDBName).C("tasks").RemoveAll(i)
-
 	db := moSession.DB(mongoDBName)
 
-	assertion := func(custID int64, agentIDs []int32) bool {
+	assertion := func(custID int32, agentIDs []int32) bool {
+		fmt.Printf("Running 'TestAddTaskCustIDStaysSame' assert check: (custID=%d)\n",custID)
 		if custID <= 0 {
 			return true
 		}
-		var task models.Task
-		fmt.Printf("Testing with custid: %d\n", custID)
-		a := []int32{2, 3, 4}
-		_, err := db.AddTask(custID, a)
 
-		if err != nil {
-			fmt.Printf(err.Error())
-		}
-		err = db.C("tasks").Find(bson.M{"custID": custID}).Select(bson.M{"custid": 1}).One(&task)
-		//fmt.Printf("Testing with custid: %d\n   %d", task.CustID, taskID)
-		//if err != nil {
-		//	fmt.Printf(err.Error() + "\n")
-		//}
+		_, err := db.AddTask(custID, agentIDs)
+		tests.Ok(t, err)
+
+		var task models.Task
+		err = db.C("tasks").Find(bson.M{"custid": custID}).Select(bson.M{"custid": 1}).One(&task)
+		tests.Ok(t, err)
+
 		return custID == task.CustID
 	}
 
-	if err := quick.Check(assertion, nil); err != nil {
-		t.Error(err)
-		t.FailNow()
+	err := quick.Check(assertion, nil)
+	tests.Ok(t, err)
+
+	// Cleanup
+	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+}
+
+func TestAddTaskAgentIDsStaysSame(t *testing.T) {
+	moSession := tests.CreateTestMongoConnection(false, true)
+	defer moSession.Refresh()
+	defer moSession.Close()
+	db := moSession.DB(mongoDBName)
+
+	assertion := func(custID int32, agentIDs []int32) bool {
+		fmt.Printf("Running 'TestAddTaskAgentIDsStaysSame' assert check: (agentIDs=%d)\n", agentIDs)
+		if custID <= 0 {
+			return true
+		}
+
+		_, err := db.AddTask(custID, agentIDs)
+		tests.Ok(t, err)
+
+		var task models.Task
+		err = db.C("tasks").Find(bson.M{"agentids": agentIDs}).Select(bson.M{"agentids": 1}).One(&task)
+		tests.Ok(t, err)
+
+		return reflect.DeepEqual(agentIDs, task.AgentIDs)
 	}
+
+	err := quick.Check(assertion, nil)
+	tests.Ok(t, err)
+
+	// Cleanup
+	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+}
+
+func TestAddTaskCustIDInvalid(t *testing.T) {
+	moSession := tests.CreateTestMongoConnection(false, true)
+	defer moSession.Refresh()
+	defer moSession.Close()
+	db := moSession.DB(mongoDBName)
+
+	assertion := func(custID int32, agentIDs []int32) bool {
+		fmt.Printf("Running 'TestAddTaskCustIDInvalid' assert check: (custID=%d)\n",custID)
+		if custID > 0 {
+			return true
+		}
+
+		taskID, err := db.AddTask(custID, agentIDs)
+
+		return amerrors.Is(err, amerrors.ErrCustIDInvalid) && taskID == 0
+	}
+
+	err := quick.Check(assertion, nil)
+	tests.Ok(t, err)
+
+	// Cleanup
+	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+}
+
+func TestAddTaskTaskIDIncrements(t *testing.T) {
+	moSession := tests.CreateTestMongoConnection(false, true)
+	defer moSession.Refresh()
+	defer moSession.Close()
+	db := moSession.DB(mongoDBName)
+
+	assertion := func(custID int32, agentIDs []int32) bool {
+		fmt.Printf("Running 'TestAddTaskTaskIDIncrements' assert check: (custID=%d)\n",custID)
+		if custID <= 0 {
+			return true
+		}
+
+		// What was the original taskid
+		var counter models.Count
+		errCount := db.C("counters").Find(bson.M{"_id": "taskid"}).Select(bson.M{"seq": 1}).One(&counter)
+		tests.Ok(t, errCount)
+
+		// AddTask
+		taskID, err := db.AddTask(custID, agentIDs)
+		tests.Ok(t, err)
+
+		// Check DB
+		var task models.Task
+		err = db.C("tasks").Find(bson.M{"_id": taskID}).Select(bson.M{"_id": 1}).One(&task)
+		tests.Ok(t, err)
+
+		return counter.Seq + 1 == taskID && taskID == taskID
+	}
+
+	err := quick.Check(assertion, nil)
+	tests.Ok(t, err)
+
+	// Cleanup
+	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
 }

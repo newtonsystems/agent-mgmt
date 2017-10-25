@@ -44,6 +44,7 @@ type MockService struct {
 	MockGetAvailableAgents func() ([]string, error)
 	MockGetAgentIDFromRef  func() (int32, error)
 	MockHeartBeat          func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+	MockAddTask func() (int32, error)
 }
 
 func NewMockService() service.Service {
@@ -78,6 +79,13 @@ func (fs MockService) HeartBeat(session models.Session, db string, agentID int32
 		return fs.MockHeartBeat()
 	}
 	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, nil
+}
+
+func (fs MockService) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
+	if fs.MockAddTask != nil {
+		return fs.MockAddTask()
+	}
+	return 1, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -190,7 +198,7 @@ func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Age
 }
 
 // AddTask mocks models.AddTask().
-func (db MockDatabase) AddTask(custID int64, agentIDs []int32) (int32, error) {
+func (db MockDatabase) AddTask(custID int32, agentIDs []int32) (int32, error) {
 	return 0, nil
 }
 

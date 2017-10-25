@@ -164,3 +164,9 @@ func TestCheckCollectionsUniqueness(t *testing.T) {
 	cleanUp(moSession)
 
 }
+
+// Future
+// Property tests http://www.quii.co.uk/Property-based%20testing%20in%20Go
+// agent agent_id is unique
+// phonesession can not be inserted if agent_id doesnt exist
+// phonesession sess_id is unique
