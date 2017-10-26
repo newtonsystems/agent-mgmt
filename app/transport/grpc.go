@@ -70,7 +70,7 @@ type grpcServer struct {
 	getagentidfromref  grpctransport.Handler
 	acceptcall         grpctransport.Handler
 	heartbeat          grpctransport.Handler
-	addtask grpctransport.Handler
+	addtask            grpctransport.Handler
 }
 
 // API Server functions defined by proto file
@@ -167,14 +167,13 @@ func EncodeGRPCHeartBeatResponse(_ context.Context, response interface{}) (inter
 
 // AddTask()
 
-// agent mgmt service (grpc_types) -> go kit
+// DecodeGRPCAddTaskRequest agent mgmt service (grpc_types) -> go kit
 func DecodeGRPCAddTaskRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
-	//logger.Log("level", "error", "msg", "DecodeGRPCAddTaskRequest")
-	//req := grpcReq.(*grpc_types.AddTaskRequest)
-	return endpoint.AddTaskRequest{}, nil
+	req := grpcReq.(*grpc_types.AddTaskRequest)
+	return endpoint.AddTaskRequest{CustId: req.CustId, AgentIds: req.CallIds}, nil
 }
 
-// go-kit -> agent mgmt service (grpc_types)
+// EncodeGRPCAddTaskResponse go-kit -> agent mgmt service (grpc_types)
 func EncodeGRPCAddTaskResponse(_ context.Context, response interface{}) (interface{}, error) {
 	resp := response.(endpoint.AddTaskResponse)
 	return &grpc_types.AddTaskResponse{TaskId: resp.TaskId}, nil

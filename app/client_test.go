@@ -170,6 +170,33 @@ var data = []entry{
 		"heartbeat_noagentidinrequest.golden",
 		"A test to check correct error if no agent id is provided to service's HeartBeat()",
 	},
+	{
+		"addtask",
+		&grpc_types.AddTaskRequest{CustId: 1, CallIds: []int32{1, 2, 3}},
+		0,
+		"addtask.input",
+		"response taskid",
+		"addtask.golden",
+		"A basic test of service's AddTask()",
+	},
+	{
+		"addtask",
+		&grpc_types.AddTaskRequest{},
+		amerrors.ErrCustIDInvalid,
+		"addtask.input",
+		"response taskid",
+		"addtask_empty.golden",
+		"A test to check of invalid custid of 0 (via empty request) for service's AddTask()",
+	},
+	{
+		"addtask",
+		&grpc_types.AddTaskRequest{CustId: 0},
+		amerrors.ErrCustIDInvalid,
+		"addtask.input",
+		"response taskid",
+		"addtask_custid0.golden",
+		"A test to check of invalid custid of 0 for service's AddTask()",
+	},
 }
 
 type entryQueryError struct {
@@ -189,6 +216,28 @@ var dataMockErrors = []entryQueryError{
 		&grpc_types.GetAgentIDFromRefRequest{},
 		"A basic QueryError test of service's GetAgentIDFromRef()",
 	},
+	{
+		"addtask",
+		&grpc_types.AddTaskRequest{},
+		"A basic QueryError test of service's AddTask()",
+	},
+}
+
+// cleanUpCollection removes all items from a collection
+func cleanUpCollection(session models.Session, testName string) {
+	var i interface{}
+	var collection string
+	switch testName {
+	case "getavailableagents":
+		fallthrough
+	case "heartbeat":
+		collection = "agents"
+	case "getagentidfromref":
+		collection = "phonesessions"
+	case "addtask":
+		collection = "tasks"
+	}
+	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }
 
 // cleanUp removes everyfrom the database including all collections
@@ -257,6 +306,22 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 		}
 		resErr = err
 
+	case "addtask":
+		request, ok := testReq.(*grpc_types.AddTaskRequest)
+		if !ok {
+			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+		}
+		resp, err := client.AddTask(
+			ctx,
+			request,
+			grpc.Header(header),
+			grpc.Trailer(trailer),
+		)
+		// Style: this doesnt feel go like
+		if err == nil {
+			res = []byte(strconv.Itoa(int(resp.TaskId)))
+		}
+		resErr = err
 	}
 
 	return res, resErr
@@ -334,11 +399,17 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 	if err != nil {
 		if *verbose {
 			fmt.Printf("Error in response found: " + fmt.Sprintf("%#v", service.UnWrapError(err, trailer)) + "\n")
-			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(service.UnWrapError(err, trailer), testHasErr)))
+			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(service.UnWrapError(err, trailer), testHasErr)) + "\n")
 		}
+		// If expecting an error and it is not the one we thought, fail
 		if testHasErr != 0 && !amerrors.Is(service.UnWrapError(err, trailer), testHasErr) {
 			t.Error(err)
 			tests.FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", service.UnWrapError(err, trailer)))
+		}
+		// If not expecting an error , fail
+		if testHasErr == 0 {
+			t.Error(err)
+			tests.FailNowAt(t, "Was not expecting an error. Error: "+err.Error())
 		}
 	}
 
@@ -429,8 +500,10 @@ func TestGRPCServerClient(t *testing.T) {
 			logger.Log("msg", "Running service test for "+e.testName)
 			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
 		})
-		cleanUp(moSession)
+		// Clean collection without destroying counters, indexes etc.
+		cleanUpCollection(moSession, e.testName)
 	}
+	cleanUp(moSession)
 	close(proCh)
 }
 
@@ -454,6 +527,9 @@ func TestGRPCQueryError(t *testing.T) {
 			},
 			MockHeartBeat: func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
 				return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, &mgo.QueryError{Code: 1}
+			},
+			MockAddTask: func() (int32, error) {
+				return 0, &mgo.QueryError{Code: 1}
 			},
 		}
 		endpoints = amendpoint.NewEndpoint(svc, nil, nil, nil, moSession, "test")

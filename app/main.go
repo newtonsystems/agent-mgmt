@@ -56,7 +56,7 @@ const (
 	serviceName = "agent-mgmt"
 
 	defaultMongoDatabase     = "db1"
-	defaultPort              = "50000"
+	defaultPort              = "50003"
 	defaultDebugHTTPPort     = "8080"
 	defaultRoutingServiceURL = "http://localhost:7878"
 	defaultLinkerdHost       = "linkerd:4141"
@@ -98,6 +98,7 @@ func main() {
 
 		mongoDB    = envString("MONGO_DB", defaultMongoDatabase)
 		mongoDebug = flag.Bool("mongo.debug", false, "Turns on mongo debug.")
+		localConn  = flag.Bool("conn.local", false, "Override mongo/linkerd connection (do not specific for mongo-external or defaults to minikube conn)")
 
 		// Other services
 		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Enable Zipkin tracing via a Zipkin HTTP Collector endpoint")
@@ -142,14 +143,16 @@ func main() {
 	}
 
 	cmd := exec.Command("cat", "/etc/hostname")
-	stdout, err := cmd.Output()
+	hostname, err := cmd.Output()
 
-	if err != nil {
-		println(err.Error())
-		return
-	}
+	// TODO: FIX WHEN FAILS  shouldnt return
+	//if err != nil {
+	//	hostname = "Unknown"
+	//	println(err.Error())
+	// RETURN
+	//}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan12")
+	logger.Log("msg", "starting ...", "level", "info", "container", hostname, "dan", "dan12")
 	defer logger.Log("msg", "goodbye")
 
 	var (
@@ -261,16 +264,27 @@ func main() {
 
 	errc := make(chan error, 2)
 
-	mongoHosts := []string{
-		"mongo-0.mongo:27017",
-		"mongo-1.mongo:27017",
-		"mongo-2.mongo:27017",
-		// dev environments for: master / featuretest
-		"mongo-0.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-1.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-2.mongo.dev-common.svc.cluster.local:27017",
-	}
+	var mongoHosts []string
+	var linkerdHost string
 
+	if *localConn {
+		linkerdHost = envString("LINKERD_SERVICE_HOST", "192.168.99.100") + ":" + envString("LINKERD_SERVICE_PORT", "31000")
+		mongoHosts = []string{
+			envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017"),
+		}
+	} else {
+		linkerdHost = defaultLinkerdHost
+		mongoHosts = []string{
+			"mongo-0.mongo:27017",
+			"mongo-1.mongo:27017",
+			"mongo-2.mongo:27017",
+			// dev environments for: master / featuretest
+			"mongo-0.mongo.dev-common.svc.cluster.local:27017",
+			"mongo-1.mongo.dev-common.svc.cluster.local:27017",
+			"mongo-2.mongo.dev-common.svc.cluster.local:27017",
+			"mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017",
+		}
+	}
 	//const (
 	// TODO: Add auth to mongo
 	//	MongoUsername   = "YOUR_USERNAME"
@@ -280,6 +294,7 @@ func main() {
 	//)
 
 	// We need this object to establish a session to our MongoDB.
+
 	mongoDBDialInfo := &mgo.DialInfo{
 		Addrs:    mongoHosts,
 		Timeout:  60 * time.Second,
@@ -348,7 +363,7 @@ func main() {
 	linkerdLogger := log.With(logger, "connection", "linkerd")
 	// If address is incorrect retries forever at the moment
 	// https://github.com/grpc/grpc-go/issues/133
-	conn, err := grpc.Dial(defaultLinkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
+	conn, err := grpc.Dial(linkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
 	if err != nil {
 		linkerdLogger.Log("msg", "Failed to connect to local linkerd", "level", "crit")
 		errc <- err
