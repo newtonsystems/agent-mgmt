@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -236,6 +237,7 @@ func cleanUpCollection(session models.Session, testName string) {
 		collection = "phonesessions"
 	case "addtask":
 		collection = "tasks"
+		session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 	}
 	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }

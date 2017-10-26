@@ -155,6 +155,11 @@ func (fc MockCollection) Update(selector interface{}, update interface{}) error 
 	return nil
 }
 
+// UpdateId mock.
+func (fc MockCollection) UpdateId(id interface{}, update interface{}) error {
+	return nil
+}
+
 // EnsureIndex mock.
 func (fc MockCollection) EnsureIndex(index mgo.Index) error {
 	return nil

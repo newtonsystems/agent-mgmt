@@ -18,6 +18,7 @@ import (
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
+	"gopkg.in/mgo.v2/bson"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -247,7 +248,8 @@ func cleanUpCollection(session models.Session, testName string) {
 	case "addtask":
 		collection = "tasks"
 	}
-	session.DB(mongoDBName).C("counters").RemoveAll(i)
+
+	session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }
 

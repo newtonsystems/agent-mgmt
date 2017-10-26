@@ -45,6 +45,7 @@ func TestAddTaskCustIDStaysSame(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskAgentIDsStaysSame(t *testing.T) {
@@ -74,6 +75,7 @@ func TestAddTaskAgentIDsStaysSame(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskCustIDInvalid(t *testing.T) {
@@ -98,6 +100,7 @@ func TestAddTaskCustIDInvalid(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskTaskIDIncrements(t *testing.T) {
@@ -134,4 +137,5 @@ func TestAddTaskTaskIDIncrements(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
+	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
