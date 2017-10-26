@@ -56,7 +56,7 @@ const (
 	serviceName = "agent-mgmt"
 
 	defaultMongoDatabase     = "db1"
-	defaultPort              = "50003"
+	defaultPort              = "50000"
 	defaultDebugHTTPPort     = "8080"
 	defaultRoutingServiceURL = "http://localhost:7878"
 	defaultLinkerdHost       = "linkerd:4141"
@@ -421,11 +421,13 @@ func main() {
 			errc <- err
 			return
 		}
+		defer ln.Close()
 
 		gRPCLogger.Log("addr", addr, "port is available")
 
 		srv := transport.GRPCServer(endpoints, tracer, gRPCLogger)
 		s := grpc.NewServer()
+		defer s.GracefulStop()
 		grpc_types.RegisterAgentMgmtServer(s, srv)
 
 		errc <- s.Serve(ln)
