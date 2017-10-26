@@ -14,9 +14,9 @@ import (
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 )
 
-const (
-	mongoDBName = "test"
-)
+//const (
+//	mongoDBName = "test"
+//)
 
 func TestAddTaskCustIDStaysSame(t *testing.T) {
 	moSession := tests.CreateTestMongoConnection(false, true)
