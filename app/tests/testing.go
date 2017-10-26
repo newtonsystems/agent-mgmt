@@ -262,11 +262,13 @@ func CreateTestMongoConnection(debug bool, prepare bool) models.Session {
 	session.SetSyncTimeout(7 * time.Second)
 	session.SetSocketTimeout(10 * time.Second)
 
-	// Prepare database
+	// Clear database & Prepare database
 	if prepare {
 	}
+
+	session.DB("test").DropDatabase()
 	models.PrepareDB(session, "test", logger)
-	//	}
+
 	return session
 }
 

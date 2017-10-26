@@ -25,7 +25,9 @@ func TestAddTaskCustIDStaysSame(t *testing.T) {
 	db := moSession.DB(mongoDBName)
 
 	assertion := func(custID int32, agentIDs []int32) bool {
+		if *verbose {
 		fmt.Printf("Running 'TestAddTaskCustIDStaysSame' assert check: (custID=%d)\n",custID)
+	}
 		if custID <= 0 {
 			return true
 		}
@@ -45,7 +47,7 @@ func TestAddTaskCustIDStaysSame(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
-	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
+	//moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskAgentIDsStaysSame(t *testing.T) {
@@ -55,7 +57,9 @@ func TestAddTaskAgentIDsStaysSame(t *testing.T) {
 	db := moSession.DB(mongoDBName)
 
 	assertion := func(custID int32, agentIDs []int32) bool {
+		if *verbose {
 		fmt.Printf("Running 'TestAddTaskAgentIDsStaysSame' assert check: (agentIDs=%d)\n", agentIDs)
+	}
 		if custID <= 0 {
 			return true
 		}
@@ -75,7 +79,7 @@ func TestAddTaskAgentIDsStaysSame(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
-	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
+	//moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskCustIDInvalid(t *testing.T) {
@@ -85,7 +89,9 @@ func TestAddTaskCustIDInvalid(t *testing.T) {
 	db := moSession.DB(mongoDBName)
 
 	assertion := func(custID int32, agentIDs []int32) bool {
+		if *verbose {
 		fmt.Printf("Running 'TestAddTaskCustIDInvalid' assert check: (custID=%d)\n",custID)
+	}
 		if custID > 0 {
 			return true
 		}
@@ -100,7 +106,7 @@ func TestAddTaskCustIDInvalid(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
-	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
+	//moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }
 
 func TestAddTaskTaskIDIncrements(t *testing.T) {
@@ -110,7 +116,9 @@ func TestAddTaskTaskIDIncrements(t *testing.T) {
 	db := moSession.DB(mongoDBName)
 
 	assertion := func(custID int32, agentIDs []int32) bool {
+		if *verbose {
 		fmt.Printf("Running 'TestAddTaskTaskIDIncrements' assert check: (custID=%d)\n",custID)
+	}
 		if custID <= 0 {
 			return true
 		}
@@ -137,5 +145,5 @@ func TestAddTaskTaskIDIncrements(t *testing.T) {
 
 	// Cleanup
 	moSession.DB(mongoDBName).C("tasks").RemoveAll(nil)
-	moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
+	//moSession.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 }

@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
+	//"log"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	mgo "gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	//"gopkg.in/mgo.v2/bson"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -237,7 +237,7 @@ func cleanUpCollection(session models.Session, testName string) {
 		collection = "phonesessions"
 	case "addtask":
 		collection = "tasks"
-		session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
+		//session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 	}
 	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }
@@ -459,29 +459,17 @@ func TestGRPCServerClient(t *testing.T) {
 	)
 
 	// gRPC server
-	proCh := make(chan string)
-	go func() {
-		ln, err := net.Listen("tcp", hostPort)
-		if err != nil {
-			t.Error(err)
-			t.FailNow()
-		}
+	ln, err := net.Listen("tcp", hostPort)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
 
-		for {
-			select {
-			case <-proCh:
-				log.Println("stopping listening on", ln.Addr())
-				ln.Close()
-				return
-			default:
-			}
-
-			srv := transport.GRPCServer(endpoints, nil, nil)
-			s := grpc.NewServer()
-			grpc_types.RegisterAgentMgmtServer(s, srv)
-			go s.Serve(ln)
-		}
-	}()
+	srv := transport.GRPCServer(endpoints, nil, nil)
+	s := grpc.NewServer()
+	grpc_types.RegisterAgentMgmtServer(s, srv)
+	go s.Serve(ln)
+	defer s.GracefulStop()
 
 	// Connection to grpc server and create a client
 	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())
@@ -499,14 +487,13 @@ func TestGRPCServerClient(t *testing.T) {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
-			logger.Log("msg", "Running service test for "+e.testName)
+			logger.Log("msg", "TestGRPCServerClient: Running service test for "+e.testName)
 			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
 		})
 		// Clean collection without destroying counters, indexes etc.
 		cleanUpCollection(moSession, e.testName)
 	}
 	cleanUp(moSession)
-	close(proCh)
 }
 
 // TestGRPCQueryError tests the server against query errors
@@ -538,20 +525,17 @@ func TestGRPCQueryError(t *testing.T) {
 	)
 
 	// gRPC server
-	go func() {
-		ln, err := net.Listen("tcp", hostPort)
-		if err != nil {
-			t.Error(err)
-			t.FailNow()
-		}
+	ln, err := net.Listen("tcp", hostPort)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
 
-		srv := transport.GRPCServer(endpoints, nil, nil)
-		s := grpc.NewServer()
-		grpc_types.RegisterAgentMgmtServer(s, srv)
-		defer s.GracefulStop()
-
-		s.Serve(ln)
-	}()
+	srv := transport.GRPCServer(endpoints, nil, nil)
+	s := grpc.NewServer()
+	grpc_types.RegisterAgentMgmtServer(s, srv)
+	go s.Serve(ln)
+	defer s.GracefulStop()
 
 	// Connection to grpc server and create a client
 	conn, err := grpc.Dial(hostPort, grpc.WithInsecure())

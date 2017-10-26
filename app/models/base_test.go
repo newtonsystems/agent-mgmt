@@ -23,6 +23,7 @@ type entry struct {
 }
 
 var debug = flag.Bool("debug", false, "turn on mongo debug")
+var verbose = flag.Bool("verbose", false, "turn on more verbose output")
 
 var logger = utils.GetLogger()
 
