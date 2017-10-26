@@ -247,6 +247,7 @@ func cleanUpCollection(session models.Session, testName string) {
 	case "addtask":
 		collection = "tasks"
 	}
+	session.DB(mongoDBName).C("counters").RemoveAll(i)
 	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }
 
