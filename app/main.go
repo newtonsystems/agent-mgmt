@@ -102,6 +102,10 @@ func main() {
 		// Other services
 		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Enable Zipkin tracing via a Zipkin HTTP Collector endpoint")
 
+		// other
+		started = time.Now()
+		mongoSession models.Session
+		mongoLogger log.Logger
 		ctx = context.Background()
 	)
 
@@ -140,6 +144,42 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 		logger = log.With(logger, "service", "agent-mgmt")
 	}
+
+	// --- Probes ---
+
+	// Liveness probe
+	http.HandleFunc("/started", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		data := (time.Now().Sub(started)).String()
+		w.Write([]byte(data))
+	})
+
+	// Readiness probe
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		ok = true
+		duration := time.Now().Sub(started)
+
+		// Connected to mongo, check
+		if moSession != nil {
+			if err := moSession.Ping(); err != nil {
+				ok = false
+			}
+		}
+
+		// Connected to linkerd, check
+
+		if duration.Seconds() > 10 {
+			w.WriteHeader(500)
+			w.Write([]byte(fmt.Sprintf("error: %v", duration.Seconds())))
+		} else {
+			w.WriteHeader(200)
+			w.Write([]byte("ok"))
+		}
+	})
+
+	// --- End of Probes ---
+
+
 
 	cmd := exec.Command("cat", "/etc/hostname")
 	stdout, err := cmd.Output()
@@ -293,7 +333,7 @@ func main() {
 
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
-	mongoSession, mongoLogger := models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
+	mongoSession, mongoLogger = models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
 	defer mongoSession.Close()
 
 	models.PrepareDB(mongoSession, mongoDB, mongoLogger)
