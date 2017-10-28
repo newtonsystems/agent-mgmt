@@ -44,6 +44,7 @@ type MockService struct {
 	MockGetAvailableAgents func() ([]string, error)
 	MockGetAgentIDFromRef  func() (int32, error)
 	MockHeartBeat          func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+	MockAddTask func() (int32, error)
 }
 
 func NewMockService() service.Service {
@@ -78,6 +79,13 @@ func (fs MockService) HeartBeat(session models.Session, db string, agentID int32
 		return fs.MockHeartBeat()
 	}
 	return grpc_types.HeartBeatResponse_HEARTBEAT_SUCCESSFUL, nil
+}
+
+func (fs MockService) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
+	if fs.MockAddTask != nil {
+		return fs.MockAddTask()
+	}
+	return 1, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -147,6 +155,11 @@ func (fc MockCollection) Update(selector interface{}, update interface{}) error 
 	return nil
 }
 
+// UpdateId mock.
+func (fc MockCollection) UpdateId(id interface{}, update interface{}) error {
+	return nil
+}
+
 // EnsureIndex mock.
 func (fc MockCollection) EnsureIndex(index mgo.Index) error {
 	return nil
@@ -187,6 +200,11 @@ func (db MockDatabase) GetAgents(timestamp time.Time, limit int32) ([]models.Age
 	json.Unmarshal(src, &agents)
 
 	return agents, nil
+}
+
+// AddTask mocks models.AddTask().
+func (db MockDatabase) AddTask(custID int32, agentIDs []int32) (int32, error) {
+	return 0, nil
 }
 
 //GetAgentIDFromRef mocks models.GetAgents().
@@ -244,11 +262,13 @@ func CreateTestMongoConnection(debug bool, prepare bool) models.Session {
 	session.SetSyncTimeout(7 * time.Second)
 	session.SetSocketTimeout(10 * time.Second)
 
-	// Prepare database
+	// Clear database & Prepare database
 	if prepare {
 	}
+
+	session.DB("test").DropDatabase()
 	models.PrepareDB(session, "test", logger)
-	//	}
+
 	return session
 }
 

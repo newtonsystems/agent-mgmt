@@ -15,6 +15,7 @@ import (
 
 	//"github.com/spf13/viper"
 	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type mongokey string
@@ -38,6 +39,7 @@ type Collection interface {
 	Insert(docs ...interface{}) error
 	Remove(selector interface{}) error
 	Update(selector interface{}, update interface{}) error
+	UpdateId(id interface{}, update interface{}) error
 	Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error)
 	EnsureIndex(index mgo.Index) error
 	RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error)
@@ -57,6 +59,7 @@ func (d MongoDatabase) C(name string) Collection {
 // (currently MongoDatabase).
 type DataLayer interface {
 	C(name string) Collection
+	AddTask(custID int32, agentIDs []int32) (int32, error)
 	AgentExists(agentID int32) (bool, error)
 	GetAgents(timestamp time.Time, limit int32) ([]Agent, error)
 	GetAgentIDFromRef(refID string) (int32, error)
@@ -143,6 +146,28 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 	return session, mongoLogger
 }
 
+type Count struct {
+	ID  string `bson:"_id"`
+	Seq int32  `bson:"seq"`
+}
+
+// GetNextSequence returns the next sequence for 'name'
+func GetNextSequence(db MongoDatabase, name string) int32 {
+	var doc Count
+	change := mgo.Change{
+		Update:    bson.M{"$inc": bson.M{"seq": 1}},
+		ReturnNew: true,
+	}
+
+	_, err := db.C("counters").Find(bson.M{"_id": name}).Apply(change, &doc)
+
+	if err != nil {
+		panic("Creation of next sequence failed for " + name)
+	}
+
+	return doc.Seq
+}
+
 // PrepareDB ensure presence of persistent and immutable data in the DB.
 func PrepareDB(session Session, db string, logger log.Logger) {
 	indexes := make(map[string]mgo.Index)
@@ -166,4 +191,11 @@ func PrepareDB(session Session, db string, logger log.Logger) {
 		}
 	}
 	logger.Log("Prepared database indexes.")
+
+	logger.Log("level", "info", "msg", "Setting up counters ...")
+	logger.Log("level", "debug", "msg", "Setting up taskid")
+	session.DB(db).C("counters").Insert(bson.M{
+		"_id": "taskid",
+		"seq": 1,
+	})
 }

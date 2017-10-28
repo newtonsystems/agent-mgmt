@@ -138,6 +138,17 @@ run: build              ##@dev Build and run service locally
 	@echo "$(NO_COLOR)"
 
 #
+# Development (run go inside telepresence)
+#
+.PHONY: local
+tele: ##@local
+	telepresence --expose 50000
+
+local:  ##@local  run main.go locally connects to local mongo external service or minikube
+	# For running inside telepresence or outside to connect to minikube
+	go run ./app/main.go -conn.local
+
+#
 # Development (Hot-Reloaded) Commands
 #
 .PHONY: build-dev run-dev
@@ -255,3 +266,6 @@ mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 			sleep 15; \
 			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
 		done
+
+mkube-replace:
+	telepresence --swap-deployment agent-mgmt --expose 50000 --run make local

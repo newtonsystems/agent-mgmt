@@ -25,6 +25,7 @@ type Set struct {
 	GetAvailableAgentsEndpoint endpoint.Endpoint
 	GetAgentIDFromRefEndpoint  endpoint.Endpoint
 	HeartBeatEndpoint          endpoint.Endpoint
+	AddTaskEndpoint            endpoint.Endpoint
 }
 
 // New returns a Set that wraps the provided server, and wires in all of the
@@ -81,12 +82,24 @@ func NewEndpoint(svc service.Service, logger log.Logger, duration metrics.Histog
 		}
 		//getAgentIDFromRefEndpoint = InstrumentingMiddleware(duration.With("method", "GetAgentIDFromRef"))(getAgentIDFromRefEndpoint)
 	}
+	var addTaskEndpoint endpoint.Endpoint
+	{
+		addTaskEndpoint = MakeAddTaskEndpoint(svc, session, db)
+		//addTaskEndpoint = ratelimit.NewTokenBucketLimiter(rl.NewBucketWithRate(100, 100))(addTaskEndpoint)
+		//addTaskEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{}))(addTaskEndpoint)
+		//addTaskEndpoint = opentracing.TraceServer(trace, "GetAgentIDFromRef")(addTaskEndpoint)
+		if logger != nil {
+			addTaskEndpoint = LoggingMiddleware(log.With(logger, "method", "AddTask"))(addTaskEndpoint)
+		}
+		//getAgentIDFromRefEndpoint = InstrumentingMiddleware(duration.With("method", "GetAgentIDFromRef"))(getAgentIDFromRefEndpoint)
+	}
 	return Set{
 		//SumEndpoint:                sumEndpoint,
 		//ConcatEndpoint:             concatEndpoint,
 		GetAvailableAgentsEndpoint: getAvailableAgentsEndpoint,
 		GetAgentIDFromRefEndpoint:  getAgentIDFromRefEndpoint,
 		HeartBeatEndpoint:          heartBeatEndpoint,
+		AddTaskEndpoint:            addTaskEndpoint,
 	}
 }
 
@@ -150,12 +163,21 @@ func MakeGetAgentIDFromRefEndpoint(s service.Service, session models.Session, db
 	}
 }
 
-// MakeGetAgentIDFromRefEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
+// MakeHeartBeatEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
 func MakeHeartBeatEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(HeartBeatRequest)
 		v, err := s.HeartBeat(session, db, req.AgentId)
 		return HeartBeatResponse{Status: v, Message: err}, nil
+	}
+}
+
+// MakeAddTaskEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
+func MakeAddTaskEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(AddTaskRequest)
+		v, err := s.AddTask(session, db, req.CustId, req.AgentIds)
+		return AddTaskResponse{TaskId: v}, service.WrapError(ctx, err)
 	}
 }
 
@@ -232,11 +254,27 @@ type GetAgentIDFromRefResponse struct {
 }
 
 // HeartBeat()
+
+// HeartBeatRequest is an internal representation of the request for HeartBeat()
 type HeartBeatRequest struct {
 	AgentId int32
 }
 
+// HeartBeatResponse is an internal representation of the response for HeartBeat()
 type HeartBeatResponse struct {
 	Message error
 	Status  grpc_types.HeartBeatResponse_HeartBeatStatus
+}
+
+// AddTask()
+
+// AddTaskRequest is an internal representation of the request for AddTask()
+type AddTaskRequest struct {
+	CustId   int32
+	AgentIds []int32
+}
+
+// AddTaskResponse is an internal representation of the response for AddTask()
+type AddTaskResponse struct {
+	TaskId int32
 }

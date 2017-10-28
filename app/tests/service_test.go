@@ -18,6 +18,7 @@ import (
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
+	//"gopkg.in/mgo.v2/bson"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -131,6 +132,24 @@ var data = []entry{
 		"heartbeat.golden",
 		"A basic test of service's HeartBeat()",
 	},
+	{
+		"addtask",
+		[]string{"1", "1,2,3"},
+		0,
+		"addtask.input",
+		"response taskID",
+		"addtask.golden",
+		"A basic test of service's AddTask()",
+	},
+	{
+		"addtask",
+		[]string{"0", "1,2,3"},
+		amerrors.ErrCustIDInvalid,
+		"addtask.input",
+		"response taskID",
+		"addtask_custid0.golden",
+		"A test to check invalid custid of 0 for service's AddTask()",
+	},
 }
 
 // runSrvTest runs a specifc test based off testName we convert to bytes for possible writing
@@ -181,6 +200,30 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 		res = []byte(strconv.Itoa(int(status)))
 		resErr = err
 
+	case "addtask":
+		custID, errConvert := strconv.Atoi(testArgs[0])
+
+		if errConvert != nil {
+			FailNowAt(t, errConvert.Error())
+		}
+
+		var agentIDs []int32
+		ids := strings.Split(testArgs[1], ",")
+
+		for _, item := range ids {
+			agentID, errConvert := strconv.Atoi(item)
+
+			if errConvert != nil {
+				FailNowAt(t, errConvert.Error())
+			}
+			agentIDs = append(agentIDs, int32(agentID))
+		}
+
+		taskID, err := s.AddTask(session, mongoDBName, int32(custID), agentIDs)
+
+		res = []byte(strconv.Itoa(int(taskID)))
+		resErr = err
+
 	}
 
 	return res, resErr
@@ -202,7 +245,11 @@ func cleanUpCollection(session models.Session, testName string) {
 		collection = "agents"
 	case "getagentidfromref":
 		collection = "phonesessions"
+	case "addtask":
+		collection = "tasks"
 	}
+
+	//session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
 	session.DB(mongoDBName).C(collection).RemoveAll(i)
 }
 

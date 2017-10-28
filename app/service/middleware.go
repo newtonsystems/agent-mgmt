@@ -62,6 +62,13 @@ func (mw loggingMiddleware) HeartBeat(session models.Session, db string, agentID
 	return mw.next.HeartBeat(session, db, agentID)
 }
 
+func (mw loggingMiddleware) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (taskID int32, err error) {
+	defer func() {
+		mw.logger.Log("method", "AddTask", "cust_id", custID, "call_ids", agentIDs, "task_id", taskID, "err", err)
+	}()
+	return mw.next.AddTask(session, db, custID, agentIDs)
+}
+
 // InstrumentingMiddleware returns a service middleware that instruments
 // the number of integers summed and characters concatenated over the lifetime of
 // the service.
@@ -84,6 +91,7 @@ type instrumentingMiddleware struct {
 	chars metrics.Counter
 	refs  metrics.Counter
 	beats metrics.Counter
+	addtasks metrics.Counter
 	next  Service
 }
 
@@ -114,5 +122,11 @@ func (mw instrumentingMiddleware) GetAgentIDFromRef(session models.Session, db s
 func (mw instrumentingMiddleware) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
 	status, err := mw.next.HeartBeat(session, db, agentID)
 	mw.beats.Add(1)
+	return status, err
+}
+
+func (mw instrumentingMiddleware) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
+	status, err := mw.next.AddTask(session, db, custID, agentIDs)
+	mw.addtasks.Add(1)
 	return status, err
 }
