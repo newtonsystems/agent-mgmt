@@ -80,6 +80,7 @@ type Session interface {
 	Close()
 	Refresh()
 	Copy() Session
+	Ping() error
 }
 
 // MongoSession is currently a Mongo session.

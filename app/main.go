@@ -55,12 +55,13 @@ import (
 const (
 	serviceName = "agent-mgmt"
 
-	defaultMongoDatabase     = "db1"
-	defaultPort              = "50000"
-	defaultDebugHTTPPort     = "8080"
-	defaultRoutingServiceURL = "http://localhost:7878"
-	defaultLinkerdHost       = "linkerd:4141"
-	defaultZipkinAddr        = "zipkin:9410"
+	defaultMongoDatabase      = "db1"
+	defaultPort               = "50000"
+	defaultDebugHTTPProbePort = ":8080"
+	defaultDebugHTTPPort      = "8081"
+	defaultRoutingServiceURL  = "http://localhost:7878"
+	defaultLinkerdHost        = "linkerd:4141"
+	defaultZipkinAddr         = "zipkin:9410"
 )
 
 type mgoDetails struct {
@@ -104,10 +105,11 @@ func main() {
 		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Enable Zipkin tracing via a Zipkin HTTP Collector endpoint")
 
 		// other
-		started = time.Now()
+		started      = time.Now()
+		linkerConn   *grpc.ClientConn
 		mongoSession models.Session
-		mongoLogger log.Logger
-		ctx = context.Background()
+		mongoLogger  log.Logger
+		ctx          = context.Background()
 	)
 
 	flag.Parse()
@@ -157,33 +159,48 @@ func main() {
 
 	// Readiness probe
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		ok = true
+		var errorLinker error
+		var errorMongo error
+		var ok = true
 		duration := time.Now().Sub(started)
 
 		// Connected to mongo, check
-		if moSession != nil {
-			if err := moSession.Ping(); err != nil {
+		if mongoSession != nil {
+			if errorMongo = mongoSession.Ping(); errorMongo != nil {
 				ok = false
 			}
 		}
 
 		// Connected to linkerd, check
+		if linkerConn != nil {
+			client := grpc_types.NewPingClient(linkerConn)
+			_, errorLinker = client.Ping(
+				context.Background(),
+				&grpc_types.PingRequest{Message: "agent-mgmt"},
+			)
 
-		if duration.Seconds() > 10 {
-			w.WriteHeader(500)
-			w.Write([]byte(fmt.Sprintf("error: %v", duration.Seconds())))
-		} else {
+			if errorLinker != nil {
+				ok = false
+			}
+		}
+
+		if ok {
 			w.WriteHeader(200)
 			w.Write([]byte("ok"))
+
+		} else {
+			w.WriteHeader(500)
+			w.Write([]byte(fmt.Sprintf("linkerErr: %v, mongoErr: %v, duration: %v", errorLinker, errorMongo, duration.Seconds())))
 		}
 	})
 
+	logger.Log("level", "debug", "transport", "http", "port", defaultDebugHTTPProbePort, "msg", "running http probe server ...")
+	go http.ListenAndServe(defaultDebugHTTPProbePort, nil)
+
 	// --- End of Probes ---
 
-
-
 	cmd := exec.Command("cat", "/etc/hostname")
-	hostname, err := cmd.Output()
+	hostname, _ := cmd.Output()
 
 	// TODO: FIX WHEN FAILS  shouldnt return
 	//if err != nil {
@@ -403,13 +420,14 @@ func main() {
 	linkerdLogger := log.With(logger, "connection", "linkerd")
 	// If address is incorrect retries forever at the moment
 	// https://github.com/grpc/grpc-go/issues/133
-	conn, err := grpc.Dial(linkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
-	if err != nil {
+	var errLinker error
+	linkerConn, errLinker = grpc.Dial(linkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
+	if errLinker != nil {
 		linkerdLogger.Log("msg", "Failed to connect to local linkerd", "level", "crit")
-		errc <- err
+		errc <- errLinker
 		return
 	}
-	defer conn.Close()
+	defer linkerConn.Close()
 
 	linkerdLogger.Log("host", defaultLinkerdHost, "msg", "successfully connected")
 

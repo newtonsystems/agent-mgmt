@@ -44,7 +44,7 @@ type MockService struct {
 	MockGetAvailableAgents func() ([]string, error)
 	MockGetAgentIDFromRef  func() (int32, error)
 	MockHeartBeat          func() (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
-	MockAddTask func() (int32, error)
+	MockAddTask            func() (int32, error)
 }
 
 func NewMockService() service.Service {
@@ -118,6 +118,10 @@ func (fs MockSession) Refresh() {}
 func (fs MockSession) DB(name string) models.DataLayer {
 	mockDatabase := MockDatabase{}
 	return mockDatabase
+}
+
+func (fs MockSession) Ping() error {
+	return nil
 }
 
 // MockDatabase satisfies DataLayer and act as a mock.
