@@ -4,10 +4,12 @@ package main
 // TODO: add prometheus & zipkin tracing
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -98,9 +100,6 @@ func main() {
 	}
 
 	// ---------------------------------------------------------------------------
-	//
-	// Initial Setup of environment
-	//
 
 	var (
 		started      = time.Now()
@@ -161,8 +160,8 @@ func main() {
 	// Initialise mongodb connection
 	// Create a session which maintains a pool of socket connections to our MongoDB.
 	// Prepare the database
-
 	// We need this object to establish a session to our MongoDB.
+
 	mongoDBDialInfo := &mgo.DialInfo{
 		Addrs:    mongoHosts,
 		Timeout:  60 * time.Second,
@@ -215,6 +214,76 @@ func main() {
 
 	// ---------------------------------------------------------------------------
 	//
+	// HTTP server (Probes + For debug + prom stats)
+	//
+	httpLogger := log.With(logger, "component", "probe", "transport", "http")
+
+	// Liveness probe
+	http.HandleFunc("/started", func(w http.ResponseWriter, r *http.Request) {
+		httpLogger.Log("msg", "started")
+		w.WriteHeader(200)
+		data := (time.Now().Sub(started)).String()
+		w.Write([]byte(data))
+	})
+
+	// Readiness probe
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		httpLogger.Log("msg", "healthz")
+		var errorLinker error
+		var errorMongo error
+		var ok = true
+		duration := time.Now().Sub(started)
+
+		// Connected to mongo, check
+		if mongoSession != nil {
+			if errorMongo = mongoSession.Ping(); errorMongo != nil {
+				ok = false
+			}
+		}
+
+		// Connected to linkerd, check
+		if l5dConn != nil {
+			client := grpc_types.NewPingClient(l5dConn)
+			_, errorLinker = client.Ping(
+				context.Background(),
+				&grpc_types.PingRequest{Message: "agent-mgmt"},
+			)
+
+			if errorLinker != nil {
+				ok = false
+			}
+		}
+
+		if ok {
+			w.WriteHeader(200)
+			w.Write([]byte("ok"))
+
+		} else {
+			httpLogger.Log("level", "error", "msg", fmt.Sprintf("Readiness Error linkerErr: %v, mongoErr: %v, duration: %v", errorLinker, errorMongo, duration.Seconds()))
+			w.WriteHeader(500)
+			w.Write([]byte(fmt.Sprintf("linkerErr: %v, mongoErr: %v, duration: %v", errorLinker, errorMongo, duration.Seconds())))
+		}
+	})
+
+	// Debug metrics for go
+	http.HandleFunc("/debug/pprof/", http.HandlerFunc(pprof.Index))
+	http.HandleFunc("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
+	http.HandleFunc("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	http.HandleFunc("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
+	http.HandleFunc("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+
+	// Metrics for prometheus
+	http.Handle("/metrics", promhttp.Handler())
+
+	go func() {
+		httpLogger.Log("addr", *debugAddr, "msg", "Running debug/probe/metrics http server")
+		errc <- http.ListenAndServe(*debugAddr, nil)
+	}()
+
+	httpLogger.Log("msg", "successfully connected")
+
+	// ---------------------------------------------------------------------------
+	//
 	// Interrupt Go-Routines (ctrl + c)
 	//
 
@@ -224,23 +293,6 @@ func main() {
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 		errc <- fmt.Errorf("%s", <-c)
 	}()
-
-	// ---------------------------------------------------------------------------
-	//
-	// HTTP server (For debug + prom stats)
-	//
-
-	httpLogger := log.With(logger, "component", "probe", "transport", "http")
-
-	//mux := http.NewServeMux()
-	http.Handle("/metrics", promhttp.Handler())
-
-	go func() {
-		httpLogger.Log("addr", *debugAddr, "msg", "Running debug/probe/metrics http server")
-		errc <- http.ListenAndServe(*debugAddr, nil)
-	}()
-
-	httpLogger.Log("msg", "successfully connected")
 
 	// ---------------------------------------------------------------------------
 	//

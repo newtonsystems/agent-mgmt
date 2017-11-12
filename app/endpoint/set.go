@@ -163,7 +163,7 @@ func MakeGetAgentIDFromRefEndpoint(s service.Service, session models.Session, db
 	}
 }
 
-// MakeGetAgentIDFromRefEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
+// MakeHeartBeatEndpoint constructs a GetAgentIDFromRef endpoint wrapping the service.
 func MakeHeartBeatEndpoint(s service.Service, session models.Session, db string) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(HeartBeatRequest)
@@ -254,10 +254,13 @@ type GetAgentIDFromRefResponse struct {
 }
 
 // HeartBeat()
+
+// HeartBeatRequest is an internal representation of the request for HeartBeat()
 type HeartBeatRequest struct {
 	AgentId int32
 }
 
+// HeartBeatResponse is an internal representation of the response for HeartBeat()
 type HeartBeatResponse struct {
 	Message error
 	Status  grpc_types.HeartBeatResponse_HeartBeatStatus

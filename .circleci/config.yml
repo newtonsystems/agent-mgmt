@@ -9,7 +9,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: newtonsystems/tools-docker-grpc-tools:0.2.4
+      - image: newtonsystems/tools-docker-grpc-tools:0.2.5
       - image: newtonsystems/tools-docker-mongo:0.1.0
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
@@ -17,6 +17,9 @@ jobs:
       CODECLIMATE_REPO_TOKEN: 9b5bddb06418a3c448e2b90c01dbd8e5ac5971a0da4dcb5cc4484dd79691f60d
       PYTHON_PACKAGE_LOCATION: ~/
       KUBECONFIG: ~/dev-utils/config/k8s/kube.config
+      # NOTE: Cant use ~ or $HOME
+      NEWTON_PATH: /root
+      DEV_UTILS_PATH: /root/dev-utils
     working_directory: /go/src/github.com/newtonsystems/agent-mgmt
     steps:
       - checkout
@@ -66,35 +69,12 @@ jobs:
             MONGO_EXTERNAL_SERVICE_HOST: localhost
             MONGO_EXTERNAL_SERVICE_PORT: 27017
           command: |
-            #echo Failed waiting for Mongo && exit 1
-            go get ./...
-            # Make sure packages are up to date
-            curl https://glide.sh/get | sh
-            make update-install
-            # Can't run tests inside docker (docker volumes not supported + code climate needs git repo info)
-            #./config/bin/run_tests.sh --code-climate
-            mkdir -p $TEST_REPORTS
-            trap "go-junit-report <${TEST_REPORTS}/go-test.out > ${TEST_REPORTS}/go-test-report.xml" EXIT
-            make check | tee ${TEST_REPORTS}/go-test.out
+             ~/dev-utils/bin/mkubectl.sh --circleci-go-run-tests
 
       - run:
           name: Compile Executable & Build & Push to Docker Hub (branch and latest (sync'd to master))
           command: |
-            # Make sure packages are up to date
-            curl https://glide.sh/get | sh
-            make update-install
-            # Cannot use volumes so we cant use 'make build-build'
-            docker build -t $DOCKER_PROJECT_NAME:compile -f Dockerfile.build .
-            docker run --name compiler $DOCKER_PROJECT_NAME:compile
-            docker cp compiler:/go/src/github.com/newtonsystems/agent-mgmt/main $PWD
-
-            docker build -t newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH .
-            docker login -u $DOCKER_USER -p $DOCKER_PASS
-            docker push newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH
-            if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                docker tag newtonsystems/$DOCKER_PROJECT_NAME:$CIRCLE_BRANCH newtonsystems/$DOCKER_PROJECT_NAME:latest
-                docker push newtonsystems/$DOCKER_PROJECT_NAME:latest
-            fi
+            ~/dev-utils/bin/mkubectl.sh --circleci-build-push-to-dockerhub
 
       # Upload test results
       - store_test_results:

@@ -251,12 +251,12 @@ func (s basicService) GetAvailableAgents(_ context.Context, session models.Sessi
 func (s basicService) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
 	logger.Log("level", "debug", "msg", fmt.Sprintf("Adding task with custID: %d, agentIDs: %#v", custID, agentIDs))
 
-	//  taskID, err := session.DB(db).AddTask(custID, agentIDs)
-	//
-	//  if err != nil {
-	//          logger.Log("level", "err", "msg", "Failed to add task", "err", err)
-	//          return 0, err
-	//  }
+	taskID, err := session.DB(db).AddTask(custID, agentIDs)
 
-	return 0, nil
+	if err != nil {
+		logger.Log("level", "err", "msg", "Failed to add task", "err", err)
+		return 0, err
+	}
+
+	return taskID, nil
 }

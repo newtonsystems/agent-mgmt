@@ -120,6 +120,10 @@ func (fs MockSession) DB(name string) models.DataLayer {
 	return mockDatabase
 }
 
+func (fs MockSession) Ping() error {
+	return nil
+}
+
 // MockDatabase satisfies DataLayer and act as a mock.
 type MockDatabase struct{}
 
@@ -152,6 +156,11 @@ func (fc MockCollection) Remove(selector interface{}) error {
 
 // Update mock.
 func (fc MockCollection) Update(selector interface{}, update interface{}) error {
+	return nil
+}
+
+// UpdateId mock.
+func (fc MockCollection) UpdateId(id interface{}, update interface{}) error {
 	return nil
 }
 
