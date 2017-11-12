@@ -64,15 +64,16 @@ help:                        ##@other Show this help.
 
 update-install:
 	@echo "$(INFO) Getting packages and building alpine go binary ..."
-	@if [ "$(CURRENT_BRANCH)" != "master" && "$(CURRENT_BRANCH)" != "featuretest" ]; then \
-		echo "$(INFO) for branch master " \
+	if [[ "$(CURRENT_BRANCH)" != "master" && "$(CURRENT_BRANCH)" != "featuretest" ]]; then \
+		echo "$(INFO) for branch master "; \
 		make update-deps-master; \
 		make install-deps-master; \
 	else \
-		echo "$(INFO) for branch $(CURRENT_BRANCH) " \
+		echo "$(INFO) for branch $(CURRENT_BRANCH) "; \
 		make update-deps-$(CURRENT_BRANCH); \
 		make install-deps-$(CURRENT_BRANCH); \
 	fi
+
 
 compile:
 	make update-install
@@ -202,6 +203,12 @@ serve-fast: restart-fast
 			make restart-fast; \
 		done
 
+cserve-fast:
+	env
+	#make update-deps-master
+	#make install-deps-master
+	go run app/main.go
+
 ################ Circleci usefulness
 preparedb:
 	go run preparedb.go
@@ -212,6 +219,13 @@ preparedb:
 check:
 	@echo "$(INFO) Running go tests ..."
 	go test -v ./app/ ./app/models/ ./app/tests
+
+check-dns-mongo:
+	nc -zvv mongo-0.mongo.default.svc.cluster.local 27017 && echo "hhkj" check
+
+kill-binded-port:
+	netstat -vanp tcp | grep 50000
+	lsof -ti:50000 | xargs kill
 
 #
 # Run Commands (Black Box)
@@ -252,7 +266,7 @@ mkube-update: build-bin      ##@kube Updates service in minikube
 
 mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
-	@docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
+	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
 	kubectl replace -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME)
 	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
 	make update-deps-master
@@ -266,6 +280,28 @@ mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
 			sleep 15; \
 			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
 		done
+
+
+
+mkube-run-dev1:               ##@kube Run service in minikube (hot-reload)
+	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
+	@eval docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
+	kubectl replace -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME)
+	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
+	make update-install
+	@echo "$(INFO) Hooking to logs in minikube ..."
+	@kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` &
+	# Add a liveness probe instead of sleep
+	@fswatch $(GO_FILES) | while read; do \
+			echo "$(INFO) Detected a change, deleting a pod to restart the service"; \
+			kubectl delete pod `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` ; \
+			sleep 15; \
+			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
+		done
+
+
+
+
 
 mkube-replace:
 	telepresence --swap-deployment agent-mgmt --expose 50000 --run make local

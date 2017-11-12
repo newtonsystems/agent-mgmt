@@ -1,5 +1,5 @@
 hash: 99c2213d8a966d813541a7cdf52ef04b36592d14f71a7d455642fb4cb5d8dfcb
-updated: 2017-10-24T19:46:18.037327+01:00
+updated: 2017-10-28T12:01:16.561258+01:00
 imports:
 - name: github.com/afex/hystrix-go
   version: f118cd938f786d24f46cc307981d8f63b7951020
@@ -44,7 +44,10 @@ imports:
   version: 130e6b02ab059e7b717a096f397c5b60111cae74
   subpackages:
   - proto
+  - ptypes
   - ptypes/any
+  - ptypes/duration
+  - ptypes/timestamp
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
@@ -58,7 +61,7 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/newtonsystems/grpc_types
-  version: 82c7ce77271028643a75fbcf609d2db3fd250759
+  version: de0b9e15807374256dc50abf1aae1a7a08b10396
   subpackages:
   - go/grpc_types
 - name: github.com/opentracing/opentracing-go
@@ -116,17 +119,20 @@ imports:
   subpackages:
   - googleapis/rpc/status
 - name: google.golang.org/grpc
-  version: b15215fb911b24a5d61d57feec4233d610530464
+  version: 61d37c5d657a47e4404fd6823bd598341a2595de
   subpackages:
+  - balancer
   - codes
+  - connectivity
   - credentials
-  - grpclb/grpc_lb_v1
+  - grpclb/grpc_lb_v1/messages
   - grpclog
   - internal
   - keepalive
   - metadata
   - naming
   - peer
+  - resolver
   - stats
   - status
   - tap

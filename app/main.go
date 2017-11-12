@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -152,6 +151,7 @@ func main() {
 
 	// Liveness probe
 	http.HandleFunc("/started", func(w http.ResponseWriter, r *http.Request) {
+		logger.Log("msg", "started")
 		w.WriteHeader(200)
 		data := (time.Now().Sub(started)).String()
 		w.Write([]byte(data))
@@ -159,6 +159,7 @@ func main() {
 
 	// Readiness probe
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		logger.Log("msg", "healthz")
 		var errorLinker error
 		var errorMongo error
 		var ok = true
@@ -189,6 +190,7 @@ func main() {
 			w.Write([]byte("ok"))
 
 		} else {
+			logger.Log("level", "error", "msg", fmt.Sprintf("Readiness Error linkerErr: %v, mongoErr: %v, duration: %v", errorLinker, errorMongo, duration.Seconds()))
 			w.WriteHeader(500)
 			w.Write([]byte(fmt.Sprintf("linkerErr: %v, mongoErr: %v, duration: %v", errorLinker, errorMongo, duration.Seconds())))
 		}
@@ -199,8 +201,8 @@ func main() {
 
 	// --- End of Probes ---
 
-	cmd := exec.Command("cat", "/etc/hostname")
-	hostname, _ := cmd.Output()
+	//cmd := exec.Command("cat", "/etc/hostname")
+	//hostname, _ := cmd.Output()
 
 	// TODO: FIX WHEN FAILS  shouldnt return
 	//if err != nil {
@@ -209,7 +211,7 @@ func main() {
 	// RETURN
 	//}
 
-	logger.Log("msg", "starting ...", "level", "info", "container", hostname, "dan", "dan12")
+	logger.Log("msg", "starting ...", "level", "info", "container", "unfdsjhfhdskgfhgshgfjsgdjhdsgjgh", "dan", "dan12")
 	defer logger.Log("msg", "goodbye")
 
 	var (
