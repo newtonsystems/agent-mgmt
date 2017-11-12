@@ -50,6 +50,12 @@ func GRPCServer(endpoints endpoint.Set, tracer stdopentracing.Tracer, logger log
 			EncodeGRPCHeartBeatResponse,
 			//append(options, grpctransport.ServerBefore(opentracing.FromGRPCRequest(tracer, "Sum", logger)))...,
 		),
+		addtask: grpctransport.NewServer(
+			endpoints.AddTaskEndpoint,
+			DecodeGRPCAddTaskRequest,
+			EncodeGRPCAddTaskResponse,
+			//append(options, grpctransport.ServerBefore(opentracing.FromGRPCRequest(tracer, "Sum", logger)))...,
+		),
 		//acceptcall: grpctransport.NewServer(
 		//	endpoints.GetAgentIDFromRefEndpoint,
 		//	DecodeGRPCGetAgentIDFromRefRequest,
@@ -64,6 +70,7 @@ type grpcServer struct {
 	getagentidfromref  grpctransport.Handler
 	acceptcall         grpctransport.Handler
 	heartbeat          grpctransport.Handler
+	addtask            grpctransport.Handler
 }
 
 // API Server functions defined by proto file
@@ -99,6 +106,14 @@ func (s *grpcServer) HeartBeat(ctx oldcontext.Context, req *grpc_types.HeartBeat
 		return nil, err
 	}
 	return rep.(*grpc_types.HeartBeatResponse), nil
+}
+
+func (s *grpcServer) AddTask(ctx oldcontext.Context, req *grpc_types.AddTaskRequest) (*grpc_types.AddTaskResponse, error) {
+	_, rep, err := s.addtask.ServeGRPC(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rep.(*grpc_types.AddTaskResponse), nil
 }
 
 // ------------------------------------------------------------------------ //
@@ -146,4 +161,20 @@ func DecodeGRPCHeartBeatRequest(_ context.Context, grpcReq interface{}) (interfa
 func EncodeGRPCHeartBeatResponse(_ context.Context, response interface{}) (interface{}, error) {
 	resp := response.(endpoint.HeartBeatResponse)
 	return &grpc_types.HeartBeatResponse{Status: resp.Status}, nil
+}
+
+// ------------------------------------------------------------------------ //
+
+// AddTask()
+
+// DecodeGRPCAddTaskRequest agent mgmt service (grpc_types) -> go kit
+func DecodeGRPCAddTaskRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
+	req := grpcReq.(*grpc_types.AddTaskRequest)
+	return endpoint.AddTaskRequest{CustId: req.CustId, AgentIds: req.CallIds}, nil
+}
+
+// EncodeGRPCAddTaskResponse go-kit -> agent mgmt service (grpc_types)
+func EncodeGRPCAddTaskResponse(_ context.Context, response interface{}) (interface{}, error) {
+	resp := response.(endpoint.AddTaskResponse)
+	return &grpc_types.AddTaskResponse{TaskId: resp.TaskId}, nil
 }

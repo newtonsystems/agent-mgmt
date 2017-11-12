@@ -1,5 +1,5 @@
 #
-# Main Dockerfile 
+# Main Dockerfile
 #
 # Should create small images < 30MB :)
 #
@@ -14,6 +14,6 @@ LABEL org.label-schema.vcs-ref=$VCS_REF \
 ENV GOPATH /go
 ENV PATH $GOPATH/bin:$PATH
 
-COPY main $GOPATH/bin/
+COPY agent-mgmt $GOPATH/bin/
 
-ENTRYPOINT ["main"]
+ENTRYPOINT ["agent-mgmt"]

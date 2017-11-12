@@ -4,8 +4,11 @@ import (
 	"context"
 	"strings"
 
+	stdprometheus "github.com/prometheus/client_golang/prometheus"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/metrics"
+	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
@@ -62,57 +65,128 @@ func (mw loggingMiddleware) HeartBeat(session models.Session, db string, agentID
 	return mw.next.HeartBeat(session, db, agentID)
 }
 
-// InstrumentingMiddleware returns a service middleware that instruments
+func (mw loggingMiddleware) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (taskID int32, err error) {
+	defer func() {
+		mw.logger.Log("method", "AddTask", "cust_id", custID, "call_ids", agentIDs, "task_id", taskID, "err", err)
+	}()
+	return mw.next.AddTask(session, db, custID, agentIDs)
+}
+
+func NewMetrics() Metrics {
+	// Create the (sparse) metrics we'll use in the service. They, too, are
+	// dependencies that we pass to components that use them.
+
+	// TODO: change namespace
+	var ints, chars, refs, beats metrics.Counter
+	{
+		// Business-level metrics.
+		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "addsvc",
+			Name:      "integers_summed",
+			Help:      "Total count of integers summed via the Sum method.",
+		}, []string{})
+		chars = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "addsvc",
+			Name:      "characters_concatenated",
+			Help:      "Total count of characters concatenated via the Concat method.",
+		}, []string{})
+		refs = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "agentmgmt",
+			Name:      "references_used",
+			Help:      "Total count of references used to get agent ID via the GetAgentIDFromRef method.",
+		}, []string{})
+		beats = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+			Namespace: "example",
+			Subsystem: "agentmgmt",
+			Name:      "total_heartbeat_counts",
+			Help:      "Total count of heartbeats service call from the HeartBeat method.",
+		}, []string{})
+	}
+
+	var duration metrics.Histogram
+	{
+		// Transport level metrics.
+		duration = kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
+			Namespace: "main",
+			Name:      "request_duration_ns",
+			Help:      "Request duration in nanoseconds.",
+		}, []string{"method", "success"})
+	}
+
+	return Metrics{
+		Ints:     ints,
+		Chars:    chars,
+		Refs:     refs,
+		Beats:    beats,
+		Duration: duration,
+		next:     nil,
+	}
+
+}
+
+// Metrics returns a service middleware that instruments
 // the number of integers summed and characters concatenated over the lifetime of
 // the service.
 // references asked for
 // The number of heartbeats counted ()
-func InstrumentingMiddleware(ints, chars, refs, beats metrics.Counter) Middleware {
+func InstrumentingMiddleware(metrics *Metrics) Middleware {
 	return func(next Service) Service {
-		return instrumentingMiddleware{
-			ints:  ints,
-			chars: chars,
-			refs:  refs,
-			beats: beats,
-			next:  next,
+		return Metrics{
+			Ints:     metrics.Ints,
+			Chars:    metrics.Chars,
+			Refs:     metrics.Refs,
+			Beats:    metrics.Beats,
+			Duration: metrics.Duration,
+			next:     next,
 		}
 	}
 }
 
-type instrumentingMiddleware struct {
-	ints  metrics.Counter
-	chars metrics.Counter
-	refs  metrics.Counter
-	beats metrics.Counter
-	next  Service
+type Metrics struct {
+	Ints     metrics.Counter
+	Chars    metrics.Counter
+	Refs     metrics.Counter
+	Beats    metrics.Counter
+	Addtasks metrics.Counter
+	Duration metrics.Histogram
+	next     Service
 }
 
-func (mw instrumentingMiddleware) Sum(ctx context.Context, a, b int) (int, error) {
+func (mw Metrics) Sum(ctx context.Context, a, b int) (int, error) {
 	v, err := mw.next.Sum(ctx, a, b)
-	mw.ints.Add(float64(v))
+	mw.Ints.Add(float64(v))
 	return v, err
 }
 
-func (mw instrumentingMiddleware) Concat(ctx context.Context, a, b string) (string, error) {
+func (mw Metrics) Concat(ctx context.Context, a, b string) (string, error) {
 	v, err := mw.next.Concat(ctx, a, b)
-	mw.chars.Add(float64(len(v)))
+	mw.Chars.Add(float64(len(v)))
 	return v, err
 }
 
-func (mw instrumentingMiddleware) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error) {
+func (mw Metrics) GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error) {
 	v, err := mw.next.GetAvailableAgents(ctx, session, db, limit)
-	mw.chars.Add(float64(len(v)))
+	mw.Chars.Add(float64(len(v)))
 	return v, err
 }
 
-func (mw instrumentingMiddleware) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
+func (mw Metrics) GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error) {
 	v, err := mw.next.GetAgentIDFromRef(session, db, refID)
-	mw.refs.Add(1)
+	mw.Refs.Add(1)
 	return v, err
 }
 
-func (mw instrumentingMiddleware) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
+func (mw Metrics) HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error) {
 	status, err := mw.next.HeartBeat(session, db, agentID)
-	mw.beats.Add(1)
+	mw.Beats.Add(1)
+	return status, err
+}
+
+func (mw Metrics) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
+	status, err := mw.next.AddTask(session, db, custID, agentIDs)
+	mw.Addtasks.Add(1)
 	return status, err
 }

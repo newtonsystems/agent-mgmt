@@ -1,21 +1,13 @@
 #
 # Makefile
 #
-# Agent Management Service
-# TODO: Need some sort of generic makefile for go services
-#
 
-REPO=agent-mgmt
-# Repository directory inside docker container
-REPO_DIR=/go/src/github.com/newtonsystems/agent-mgmt
-# Filename of k8s deployment file inside 'local' devops folder
-LOCAL_DEPLOYMENT_FILENAME=agent-mgmt-deployment.yml
-
-NEWTON_DIR=/Users/danvir/Masterbox/sideprojects/github/newtonsystems/
-CURRENT_BRANCH=`git rev-parse --abbrev-ref HEAD`
 CURRENT_RELEASE_VERSION=0.0.1
+REPO=agent-mgmt
+LOCAL_DEPLOYMENT_FILENAME=agent-mgmt-deployment.yml
+GO_MAIN=./app/main.go
+GO_PORT=50000
 
-TIMESTAMP=tmp-$(shell date +%s )
 
 #
 # Help for Makefile & Colorised Messages
@@ -53,205 +45,77 @@ HELP_FUN = \
 
 .PHONY: help
 
-help:                        ##@other Show this help.
+help:         ##@other Show this help.
 	@perl -e '$(HELP_FUN)' $(MAKEFILE_LIST)
 
-
 #
-# Compile + Go Dependencies Commands
+# Arg Utilities for Makefile
 #
-.PHONY: compile update-deps-featuretest update-deps-master install-deps-featuretest install-deps-master add-deps-master add-deps-featuretest
 
-update-install:
-	@echo "$(INFO) Getting packages and building alpine go binary ..."
-	@if [ "$(CURRENT_BRANCH)" != "master" && "$(CURRENT_BRANCH)" != "featuretest" ]; then \
-		echo "$(INFO) for branch master " \
-		make update-deps-master; \
-		make install-deps-master; \
-	else \
-		echo "$(INFO) for branch $(CURRENT_BRANCH) " \
-		make update-deps-$(CURRENT_BRANCH); \
-		make install-deps-$(CURRENT_BRANCH); \
-	fi
+ifeq (get,$(firstword $(MAKECMDGOALS)))
+  # use the rest as arguments for "run"
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  # ...and turn them into do-nothing targets
+  $(eval $(RUN_ARGS):;@:)
+endif
 
-compile:
-	make update-install
-	make build-command
+# ------------------------------------------------------------------------------
+.PHONY: update master build get
 
+update:       ##@build Updates dependencies for your go application
+	bash -c "mkubectl.sh --update-deps"
 
-build-command:
-	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./app/main.go
+install:      ##@build Install dependencies for your go application
+	bash -c "mkubectl.sh --install-deps"
 
-update-deps-featuretest:
-	rm -rf ./.glide
-	@echo "$(INFO) Updating dependencies for featuretest environment"
-	cp featuretest.lock glide.lock
-	glide -y featuretest.yaml update --force
-	cp glide.lock featuretest.lock
+get:        ##@build Add dependency for your go application
+	bash -c "mkubectl.sh --get-deps $(RUN_ARGS)"
 
-update-deps-master:
-	rm -rf ./.glide
-	@echo "$(INFO) Updating dependencies for $(BLUE)master$(RESET) environment"
-	cp master.lock glide.lock
-	glide -y master.yaml update --force
-	cp glide.lock master.lock
-
-install-deps-featuretest:
-	@echo "$(INFO) Installing dependencies for featuretest environment"
-	cp featuretest.lock glide.lock
-	glide -y featuretest.yaml install
-	cp glide.lock featuretest.lock
-
-install-deps-master:
-	@echo "$(INFO) Installing dependencies for $(BLUE)master$(RESET) environment"
-	cp master.lock glide.lock
-	glide -y master.yaml install
-	cp glide.lock master.lock
+build:        ##@compile Builds executable cross compiled for alpine docker
+	bash -c "mkubectl.sh --compile-inside-docker ${REPO} ${GO_MAIN}"
 
 
-#
-# Main (Build binary)
-#
-.PHONY: build-bin
+# ------------------------------------------------------------------------------
+# CircleCI support
+.PHONY: check preparedb
 
-# TODO: Should speed this up with voluming vendor/
-build-bin:              ##@build Cross compile the go binary executable
-	@echo "$(INFO) Building a linux-alpine Go binary locally with a docker container $(BLUE)$(REPO):compile$(RESET)"
-	docker build -t $(REPO):compile -f Dockerfile.build .
-	docker run --rm -v "${PWD}":$(REPO_DIR) $(REPO):compile
-	@echo ""
+check:        ##@circleci Needed for running circleci tests
+	@echo "$(INFO) Running tests"
+	go test -v ./app/ ./app/models/ ./app/tests
 
-#
-# Run Commands
-#
-.PHONY: build run
-
-build: build-bin
-	docker build -t $(REPO):local .
-
-run: build              ##@dev Build and run service locally
-	@echo "$(INFO) Running docker container with tag: $(REPO):local"
-	@echo "$(BLUE)"
-	@echo "$(INFO) Building docker container locally with tag: $(BLUE)$(REPO):local$(RESET)"
-
-	docker run -it $(REPO):local
-	@echo "$(NO_COLOR)"
-
-#
-# Development (Hot-Reloaded) Commands
-#
-.PHONY: build-dev run-dev
-
-build-dev:
-	docker build -t $(REPO):dev -f Dockerfile.dev .
-
-run-dev: build-dev    ##@dev Build and run (hot-reload) development docker container (few extra packages for debugging containers) (Normally run this for dev changes)
-	@echo ""
-	docker run -v "${PWD}":$(REPO_DIR) -p 50000:50000  -it $(REPO):dev
-
-#
-# Hot Reload Development
-#
-.PHONY: serve restart kill before
-
-PID      = /tmp/$(REPO).pid
-GO_FILES = $(wildcard app/*.go)
-APP_DIR = app/
-APP      = ./main
-APP_MAIN = app/main.go
-
-
-
-kill:
-	@if [ -f $(PID) ]; then \
-		echo "$(INFO) Killing application: $(PID) " \
-		kill `cat $(PID)` || true; \
-		ps aux;pgrep main; \
-		kill -9 pgrep main || true; \
-	fi
-
-
-restart: kill build-command
-	@./main & echo $$! > $(PID)
-
-restart-fast: kill
-	@go run $(APP_MAIN) & echo $$! > $(PID)
-
-serve: restart
-	@inotifywait -r -m . -e create -e modify | \
-		while read path action file; do \
-			echo "$(INFO) '$$file' has changed from dir '$$path' via '$$action'"; \
-			make restart; \
-		done
-
-serve-fast: restart-fast
-	@inotifywait -r -m $(GO_FILES) -e create -e modify | \
-		while read path action file; do \
-			echo "$(INFO) '$$file' has changed from dir '$$path' via '$$action'"; \
-			make restart-fast; \
-		done
-
-################ Circleci usefulness
 preparedb:
 	go run preparedb.go
 
-#
-# Run tests (outside docker)
-#
-check:
-	@echo "$(INFO) Running go tests ..."
-	go test -v ./app/ ./app/models/ ./app/tests
 
-#
-# Run Commands (Black Box)
-#
-.PHONY: run-latest-release run-latest
+# ------------------------------------------------------------------------------
+# Non docker local development (can be useful for super fast local/debugging)
+.PHONY: run-conn run-build-bin clean
 
-run-latest-release:     ##@run-black-box Run the current release (When you want to run as service as a black-box)
-	@echo "$(INFO) Pulling release docker image for branch: newtonsystems/$(REPO):$(CURRENT_RELEASE_VERSION)"
-	@echo "$(BLUE)"
-	docker pull newtonsystems/$(REPO):$(CURRENT_RELEASE_VERSION);
-	docker run newtonsystems/$(REPO):$(CURRENT_RELEASE_VERSION);
-	@echo "$(NO_COLOR)"
+run-conn:          ##@devlocal Run locally (outside docker) (but connect to minikube linkerd etc)
+	@echo "$(INFO) Running go service outside of docker ...."
+	go run ${GO_MAIN} --conn.local
 
-run-latest:             ##@run-black-box Run the most up-to-date image for your branch from the docker registry or if the image doesnt exist yet you can specify. (When you want to run as service as a black-box)
-	@echo "$(INFO) Running the most up-to-date image"
-	@echo "$(INFO) Pulling latest docker image for branch: newtonsystems/$(REPO):$(CURRENT_BRANCH)"
+run-build-bin:      ##@devlocal Builds binary locally (outside docker)
+	bash -c "REPO=${REPO} GO_MAIN=${GO_MAIN} mkubectl.sh --compile"
 
-	@docker pull newtonsystems/$(REPO):$(CURRENT_BRANCH); if [ $$? -ne 0 ] ; then \
-		echo "$(ERROR) Failed to find image in registry: newtonsystems/$(REPO):$(CURRENT_BRANCH)"; \
-		read -r -p "$(GREEN) Specific your own image name or Ctrl+C to exit:$(RESET)   " reply; \
-		docker pull newtonsystems/$(REPO):$$reply; \
-		docker run newtonsystems/$(REPO):$$reply; \
-	else \
-		docker run newtonsystems/$(REPO):$(CURRENT_BRANCH) app; \
-	fi
+clean:
+	@rm -rf vendor/
+	@rm -f ${REPO}
+	@rm -f Gopkg.toml Gopkg.lock
 
 
-#
-# minikube
-#
-.PHONY: mkube-update mkube-run-dev
+# ------------------------------------------------------------------------------
+# Minikube (Normal Development)
+.PHONY: run swap-hot-local swap-latest swap-latest-release
 
-mkube-update: build-bin      ##@kube Updates service in minikube
-	@echo "$(INFO) Deploying $(REPO):$(TIMESTAMP) by replacing image in kubernetes deployment config"
-	# TODO: add cluster check  - i.e. is minikube pointed at
-	@eval $$(minikube docker-env); docker image build -t newtonsystems/$(REPO):$(TIMESTAMP) .
-	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):$(TIMESTAMP)
+run:                    ##@dev Alias for swap-hot-local
+	@make REPO=${REPO} GO_MAIN=${GO_MAIN} swap-hot-local
 
-mkube-run-dev:               ##@kube Run service in minikube (hot-reload)
-	@echo "$(INFO) Running $(REPO):kube-dev (Dev in Minikube) by replacing image in kubernetes deployment config"
-	@docker image build -t newtonsystems/$(REPO):kube-dev -f Dockerfile.dev .
-	kubectl replace -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME)
-	kubectl set image -f $(NEWTON_DIR)/devops/k8s/deploy/local/$(LOCAL_DEPLOYMENT_FILENAME) $(REPO)=newtonsystems/$(REPO):kube-dev
-	make update-deps-master
-	make install-deps-master
-	@echo "$(INFO) Hooking to logs in minikube ..."
-	@kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` &
-	# Add a liveness probe instead of sleep
-	@fswatch $(APP_DIR) | while read; do \
-			echo "$(INFO) Detected a change, deleting a pod to restart the service"; \
-			kubectl delete pod `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` ; \
-			sleep 15; \
-			kubectl logs -f `kubectl get pods -o wide | grep $(REPO) | grep Running | cut -d ' ' -f1` & \
-		done
+swap-hot-local:         ##@dev Swaps $(REPO) deployment in minikube with hot-reloadable docker image (You must make sure you are running i.e. infra-minikube.sh --create)
+	@bash -c "mkubectl.sh --hot-reload-deployment ${REPO} ${LOCAL_DEPLOYMENT_FILENAME} ${GO_PORT}"
+
+swap-latest:            ##@dev Swaps $(REPO) deployment in minikube with the latest image for branch from dockerhub (You must make sure you are running i.e. infra-minikube.sh --create)
+	@bash -c "mkubectl.sh --swap-deployment-with-latest-image ${REPO} ${LOCAL_DEPLOYMENT_FILENAME}"
+
+swap-latest-release:    ##@dev Swaps $(REPO) deployment in minikube with the latest release image for from dockerhub (You must make sure you are running i.e. infra-minikube.sh --create)
+	@bash -c "mkubectl.sh --swap-deployment-with-latest-release-image ${REPO} ${LOCAL_DEPLOYMENT_FILENAME} ${CURRENT_RELEASE_VERSION}"

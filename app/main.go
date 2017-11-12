@@ -4,8 +4,6 @@ package main
 // TODO: add prometheus & zipkin tracing
 
 import (
-	"context"
-	"encoding/xml"
 	"flag"
 	"fmt"
 	"net"
@@ -16,96 +14,56 @@ import (
 	"syscall"
 	"time"
 
-	"google.golang.org/grpc"
-
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/term"
-	"github.com/go-kit/kit/metrics"
-	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	//"github.com/go-kit/kit/tracing/opentracing"
 	stdopentracing "github.com/opentracing/opentracing-go"
 	//zipkin "github.com/openzipkin/zipkin-go-opentracing"
 
 	//"github.com/go-kit/kit/endpoint"
-	"github.com/go-kit/kit/examples/shipping/booking"
-	"github.com/go-kit/kit/examples/shipping/cargo"
-	"github.com/go-kit/kit/examples/shipping/handling"
-	"github.com/go-kit/kit/examples/shipping/inmem"
-	"github.com/go-kit/kit/examples/shipping/inspection"
-	"github.com/go-kit/kit/examples/shipping/location"
-	"github.com/go-kit/kit/examples/shipping/routing"
-	"github.com/go-kit/kit/examples/shipping/tracking"
 
-	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	//"github.com/newtonsystems/agent-mgmt/app"
 	"github.com/newtonsystems/agent-mgmt/app/endpoint"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
 	"github.com/newtonsystems/agent-mgmt/app/transport"
+	"github.com/newtonsystems/grpc_types/go/grpc_types"
 )
-
-//var MongoDatabase string
-//var MongoSession *mgo.Session
 
 const (
-	serviceName = "agent-mgmt"
-
-	defaultMongoDatabase     = "db1"
-	defaultPort              = "50000"
-	defaultDebugHTTPPort     = "8080"
-	defaultRoutingServiceURL = "http://localhost:7878"
-	defaultLinkerdHost       = "linkerd:4141"
-	defaultZipkinAddr        = "zipkin:9410"
+	serviceName          = "agent-mgmt"
+	defaultMongoDatabase = "db1"
+	defaultPort          = ":50000"
+	defaultDebugHTTPPort = ":9090"
+	defaultLinkerdHost   = "linkerd:4141"
+	defaultZipkinAddr    = "zipkin:9410"
 )
-
-type mgoDetails struct {
-	db      string
-	session models.Session
-}
-
-var MongoDetails mgoDetails
-
-type TwiML struct {
-	XMLName xml.Name `xml:"Response"`
-
-	Say string `xml:",omitempty"`
-}
-
-func twiml(w http.ResponseWriter, r *http.Request) {
-	twiml := TwiML{Say: "Hello World!"}
-	x, err := xml.Marshal(twiml)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.Write(x)
-}
 
 func main() {
 	var (
-		addr  = envString("PORT", defaultPort)
-		rsurl = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
+		// Main configuration (via environment variables)
+		addr    = envString("PORT", defaultPort)
+		mongoDB = envString("MONGO_DB", defaultMongoDatabase)
 
-		httpAddr          = flag.String("http.addr", ":"+defaultDebugHTTPPort, "HTTP listen address")
-		routingServiceURL = flag.String("service.routing", rsurl, "routing service URL")
+		// Other services (Debug HTTP probe/metrics/debug + Tracing)
+		debugAddr  = flag.String("debug.addr", defaultDebugHTTPPort, "Debug and metrics listen address")
+		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Zipkin address for tracing via a Zipkin HTTP Collector endpoint")
 
-		mongoDB    = envString("MONGO_DB", defaultMongoDatabase)
+		// Extra Options
+		// Connect to minikube when running locally?
+		localConn = flag.Bool("conn.local", false, "Override mongo/linkerd connection (specific for mongo-external or defaults to minikube conn)")
+		// Mongo Debug enabled?
 		mongoDebug = flag.Bool("mongo.debug", false, "Turns on mongo debug.")
-
-		// Other services
-		zipkinAddr = flag.String("zipkin.addr", defaultZipkinAddr, "Enable Zipkin tracing via a Zipkin HTTP Collector endpoint")
-
-		ctx = context.Background()
 	)
 
 	flag.Parse()
+
+	// ---------------------------------------------------------------------------
+	// Colourised Logging
 
 	// Color by level value
 	colorFn := func(keyvals ...interface{}) term.FgBgColor {
@@ -131,153 +89,78 @@ func main() {
 		return term.FgBgColor{}
 	}
 
-	// Logging domain.
 	var logger log.Logger
 	{
-		//logger = log.NewLogfmtLogger(os.Stdout)
 		logger = term.NewLogger(os.Stdout, log.NewLogfmtLogger, colorFn)
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 		logger = log.With(logger, "caller", log.DefaultCaller)
-		logger = log.With(logger, "service", "agent-mgmt")
+		logger = log.With(logger, "service", serviceName)
 	}
 
-	cmd := exec.Command("cat", "/etc/hostname")
-	stdout, err := cmd.Output()
-
-	if err != nil {
-		println(err.Error())
-		return
-	}
-
-	logger.Log("msg", "starting ...", "level", "info", "container", stdout, "dan", "dan12")
-	defer logger.Log("msg", "goodbye")
+	// ---------------------------------------------------------------------------
+	//
+	// Initial Setup of environment
+	//
 
 	var (
-		cargos         = inmem.NewCargoRepository()
-		locations      = inmem.NewLocationRepository()
-		voyages        = inmem.NewVoyageRepository()
-		handlingEvents = inmem.NewHandlingEventRepository()
+		started      = time.Now()
+		container    string
+		mongoHosts   []string
+		l5dHost      string
+		l5dConn      *grpc.ClientConn
+		mongoSession models.Session
+		mongoLogger  log.Logger
 	)
 
-	// Configure some questionable dependencies.
-	var (
-		handlingEventFactory = cargo.HandlingEventFactory{
-			CargoRepository:    cargos,
-			VoyageRepository:   voyages,
-			LocationRepository: locations,
-		}
-		handlingEventHandler = handling.NewEventHandler(
-			inspection.NewService(cargos, handlingEvents, nil),
-		)
-	)
-
-	// Facilitate testing by adding some cargos.
-	storeTestData(cargos)
-
-	fieldKeys := []string{"method"}
-
-	var rs routing.Service
-	rs = routing.NewProxyingMiddleware(ctx, *routingServiceURL)(rs)
-
-	var bs booking.Service
-	bs = booking.NewService(cargos, locations, handlingEvents, rs)
-	bs = booking.NewLoggingService(log.With(logger, "component", "booking"), bs)
-	bs = booking.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "booking_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "booking_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
-		bs,
-	)
-
-	var ts tracking.Service
-	ts = tracking.NewService(cargos, handlingEvents)
-	ts = tracking.NewLoggingService(log.With(logger, "component", "tracking"), ts)
-	ts = tracking.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "tracking_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "tracking_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
-		ts,
-	)
-
-	var hs handling.Service
-	hs = handling.NewService(handlingEvents, handlingEventFactory, handlingEventHandler)
-	hs = handling.NewLoggingService(log.With(logger, "component", "handling"), hs)
-	hs = handling.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "handling_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "handling_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
-		hs,
-	)
-
-	httpLogger := log.With(logger, "component", "http")
-
-	mux := http.NewServeMux()
-
-	mux.Handle("/booking/v1/", booking.MakeHandler(bs, httpLogger))
-	mux.Handle("/tracking/v1/", tracking.MakeHandler(ts, httpLogger))
-	mux.Handle("/handling/v1/", handling.MakeHandler(hs, httpLogger))
-
-	http.Handle("/", accessControl(mux))
-	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/twiml", twiml)
-
-	errs := make(chan error, 2)
-	go func() {
-		logger.Log("transport", "http", "address", *httpAddr, "msg", "listening")
-		errs <- http.ListenAndServe(*httpAddr, nil)
-	}()
-	go func() {
-		c := make(chan os.Signal)
-		signal.Notify(c, syscall.SIGINT)
-		errs <- fmt.Errorf("%s", <-c)
-	}()
-
+	// Error channel
 	errc := make(chan error, 2)
 
-	mongoHosts := []string{
-		"mongo-0.mongo:27017",
-		"mongo-1.mongo:27017",
-		"mongo-2.mongo:27017",
-		// dev environments for: master / featuretest
-		"mongo-0.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-1.mongo.dev-common.svc.cluster.local:27017",
-		"mongo-2.mongo.dev-common.svc.cluster.local:27017",
+	// Depending on the environment we connect to different hosts
+	// if local.conn is true we want to connecting by running the go service locally
+	// we therefore want to connect to the minikube's linkerd and mongo services
+	// else we are inside the kubernetes cluster and connect normally via kubernetes DNS
+	if *localConn {
+		container = "localhost"
+		l5dHost = envString("LINKERD_SERVICE_HOST", "192.168.99.100") + ":" + envString("LINKERD_SERVICE_PORT", "31000")
+		mongoHosts = []string{
+			envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017"),
+		}
+	} else {
+		l5dHost = defaultLinkerdHost
+		mongoHosts = []string{
+			"mongo-0.mongo:27017",
+			"mongo-1.mongo:27017",
+			"mongo-2.mongo:27017",
+			// dev environments for: master / featuretest
+			"mongo-0.mongo.dev-common.svc.cluster.local:27017",
+			"mongo-1.mongo.dev-common.svc.cluster.local:27017",
+			"mongo-2.mongo.dev-common.svc.cluster.local:27017",
+			"mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017",
+		}
+
+		// Try and workout container id
+		cmd := exec.Command("cat", "/etc/hostname")
+		stdout, err := cmd.Output()
+
+		if err != nil {
+			logger.Log("level", "error", "error", err.Error(), "msg", "Failed in cat command to workout hostname")
+			return
+		}
+
+		container = string(stdout)
 	}
 
-	//const (
-	// TODO: Add auth to mongo
-	//	MongoUsername   = "YOUR_USERNAME"
-	//	MongoPassword   = "YOUR_PASS"
-	//MongoDatabase = mongoDB2
-	//	Collection = "YOUR_COLLECTION"
-	//)
+	logger.Log("level", "info", "container", container, "started", started, "msg", "starting ...", "stage", "#started")
+	defer logger.Log("msg", "goodbye")
+
+	// ---------------------------------------------------------------------------
+	//
+	// Mongo Setup
+	//
+
+	// Initialise mongodb connection
+	// Create a session which maintains a pool of socket connections to our MongoDB.
+	// Prepare the database
 
 	// We need this object to establish a session to our MongoDB.
 	mongoDBDialInfo := &mgo.DialInfo{
@@ -289,75 +172,118 @@ func main() {
 		//Password: MongoPassword,
 	}
 
-	// -------------------------------------------------------------------- //
-
-	// Initialise mongodb connection
-	// Create a session which maintains a pool of socket connections to our MongoDB.
-	mongoSession, mongoLogger := models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
+	mongoSession, mongoLogger = models.NewMongoSession(mongoDBDialInfo, logger, *mongoDebug)
 	defer mongoSession.Close()
 
 	models.PrepareDB(mongoSession, mongoDB, mongoLogger)
 
-	// -------------------------------------------------------------------- //
-
-	// gRPC service / service metrics / endpoints / connect to linkerd
-
-	// Create the (sparse) metrics we'll use in the service. They, too, are
-	// dependencies that we pass to components that use them.
-	// TODO: change namespace
-	var ints, chars, refs, beats metrics.Counter
-	{
-		// Business-level metrics.
-		ints = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "integers_summed",
-			Help:      "Total count of integers summed via the Sum method.",
-		}, []string{})
-		chars = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "addsvc",
-			Name:      "characters_concatenated",
-			Help:      "Total count of characters concatenated via the Concat method.",
-		}, []string{})
-		refs = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "agentmgmt",
-			Name:      "references_used",
-			Help:      "Total count of references used to get agent ID via the GetAgentIDFromRef method.",
-		}, []string{})
-		beats = kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "example",
-			Subsystem: "agentmgmt",
-			Name:      "total_heartbeat_counts",
-			Help:      "Total count of heartbeats service call from the HeartBeat method.",
-		}, []string{})
-	}
-
-	var duration metrics.Histogram
-	{
-		// Transport level metrics.
-		duration = kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "main",
-			Name:      "request_duration_ns",
-			Help:      "Request duration in nanoseconds.",
-		}, []string{"method", "success"})
-	}
-
-	// Connect to local linkerd
-	linkerdLogger := log.With(logger, "connection", "linkerd")
+	// ---------------------------------------------------------------------------
+	// LinkerD Setup
 	// If address is incorrect retries forever at the moment
 	// https://github.com/grpc/grpc-go/issues/133
-	conn, err := grpc.Dial(defaultLinkerdHost, grpc.WithInsecure(), grpc.WithTimeout(time.Second))
-	if err != nil {
-		linkerdLogger.Log("msg", "Failed to connect to local linkerd", "level", "crit")
-		errc <- err
+
+	var errL5d error
+
+	l5dLogger := log.With(logger, "connection", "linkerd")
+
+	l5dConn, errL5d = grpc.Dial(
+		l5dHost,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(time.Second),
+	)
+
+	if errL5d != nil {
+		l5dLogger.Log("level", "crit", "msg", "Failed to connect to local linkerd")
+		errc <- errL5d
 		return
 	}
-	defer conn.Close()
 
-	linkerdLogger.Log("host", defaultLinkerdHost, "msg", "successfully connected")
+	defer l5dConn.Close()
+	l5dLogger.Log("host", l5dHost, "msg", "successfully connected")
 
+	// ---------------------------------------------------------------------------
+	//
+	// Main
+	//
+
+	var (
+		tracer    = newTracer(logger, zipkinAddr)
+		metrics   = service.NewMetrics()
+		service   = service.NewService(logger, &metrics)
+		endpoints = endpoint.NewEndpoint(service, logger, metrics.Duration, tracer, mongoSession, mongoDB)
+	)
+
+	// ---------------------------------------------------------------------------
+	//
+	// Interrupt Go-Routines (ctrl + c)
+	//
+
+	// Interrupt handler.
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+		errc <- fmt.Errorf("%s", <-c)
+	}()
+
+	// ---------------------------------------------------------------------------
+	//
+	// HTTP server (For debug + prom stats)
+	//
+
+	httpLogger := log.With(logger, "component", "probe", "transport", "http")
+
+	//mux := http.NewServeMux()
+	http.Handle("/metrics", promhttp.Handler())
+
+	go func() {
+		httpLogger.Log("addr", *debugAddr, "msg", "Running debug/probe/metrics http server")
+		errc <- http.ListenAndServe(*debugAddr, nil)
+	}()
+
+	httpLogger.Log("msg", "successfully connected")
+
+	// ---------------------------------------------------------------------------
+	//
+	// gRPC server (Main service)
+	//
+
+	go func() {
+		gRPCLogger := log.With(logger, "component", "server", "transport", "gRPC")
+
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			errc <- err
+			return
+		}
+		defer ln.Close()
+
+		gRPCLogger.Log("level", "debug", "addr", addr, "msg", "port is available")
+		gRPCLogger.Log("addr", addr, "msg", "Running gRPC server")
+
+		srv := transport.GRPCServer(endpoints, tracer, gRPCLogger)
+		s := grpc.NewServer()
+		defer s.GracefulStop()
+		grpc_types.RegisterAgentMgmtServer(s, srv)
+
+		errc <- s.Serve(ln)
+	}()
+
+	// ---------------------------------------------------------------------------
+
+	// Exit!
+	logger.Log("exit", <-errc)
+}
+
+// ----
+func envString(env, fallback string) string {
+	e := os.Getenv(env)
+	if e == "" {
+		return fallback
+	}
+	return e
+}
+
+func newTracer(logger log.Logger, zipkinAddr *string) stdopentracing.Tracer {
 	// Tracing domain.
 	var tracer stdopentracing.Tracer
 	{
@@ -387,110 +313,5 @@ func main() {
 		}
 	}
 
-	MongoDetails.db = mongoDB
-	MongoDetails.session = mongoSession
-
-	var (
-		service   = service.NewService(logger, ints, chars, refs, beats)
-		endpoints = endpoint.NewEndpoint(service, logger, duration, tracer, mongoSession, mongoDB)
-	)
-
-	// gRPC transport
-	go func() {
-		gRPCLogger := log.With(logger, "transport", "gRPC")
-
-		gRPCLogger.Log("addr", addr, "port is avasdasailable")
-
-		ln, err := net.Listen("tcp", ":"+addr)
-		if err != nil {
-			errc <- err
-			return
-		}
-
-		gRPCLogger.Log("addr", addr, "port is available")
-
-		srv := transport.GRPCServer(endpoints, tracer, gRPCLogger)
-		s := grpc.NewServer()
-		grpc_types.RegisterAgentMgmtServer(s, srv)
-
-		errc <- s.Serve(ln)
-	}()
-
-	// -------------------------------------------------------------------- //
-
-	// Run!
-	logger.Log("exit", <-errc)
-}
-
-func accessControl(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type")
-
-		if r.Method == "OPTIONS" {
-			return
-		}
-
-		h.ServeHTTP(w, r)
-	})
-}
-
-type Person struct {
-	Name  string
-	Phone string
-}
-
-func main_mongo_test(logger log.Logger) {
-	session, err := mgo.Dial("mongodb://mongo-0.mongo,mongo-1.mongo,mongo-2.mongo:27017")
-	if err != nil {
-		panic(err)
-	}
-	defer session.Close()
-
-	// Optional. Switch the session to a monotonic behavior.
-	session.SetMode(mgo.Monotonic, true)
-
-	c := session.DB("test").C("people")
-	err = c.Insert(&Person{"Ale", "+55 53 8116 9639"},
-		&Person{"Cla", "+55 53 8402 8510"})
-	if err != nil {
-		logger.Log("msg", err)
-	}
-
-	result := Person{}
-	err = c.Find(bson.M{"name": "Ale"}).One(&result)
-	if err != nil {
-		logger.Log("msg", err)
-	}
-
-	fmt.Println("Phone:", result.Phone)
-}
-
-func envString(env, fallback string) string {
-	e := os.Getenv(env)
-	if e == "" {
-		return fallback
-	}
-	return e
-}
-
-func storeTestData(r cargo.Repository) {
-	test1 := cargo.New("FTL456", cargo.RouteSpecification{
-		Origin:          location.AUMEL,
-		Destination:     location.SESTO,
-		ArrivalDeadline: time.Now().AddDate(0, 0, 7),
-	})
-	if err := r.Store(test1); err != nil {
-		panic(err)
-	}
-
-	test2 := cargo.New("ABC123", cargo.RouteSpecification{
-		Origin:          location.SESTO,
-		Destination:     location.CNHKG,
-		ArrivalDeadline: time.Now().AddDate(0, 0, 14),
-	})
-	if err := r.Store(test2); err != nil {
-		panic(err)
-	}
+	return tracer
 }

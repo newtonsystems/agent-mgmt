@@ -381,7 +381,7 @@ func TestGRPCServerClient(t *testing.T) {
 
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
 	var (
-		service   = service.NewService(nil, nil, nil, nil, nil)
+		service   = service.NewService(nil, nil)
 		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
 	)
 

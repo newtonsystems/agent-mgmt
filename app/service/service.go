@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -39,6 +38,7 @@ type Service interface {
 	GetAvailableAgents(ctx context.Context, session models.Session, db string, limit int32) ([]string, error)
 	GetAgentIDFromRef(session models.Session, db string, refID string) (int32, error)
 	HeartBeat(session models.Session, db string, agentID int32) (grpc_types.HeartBeatResponse_HeartBeatStatus, error)
+	AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error)
 }
 
 // Elegantly ripped from https://github.com/letsencrypt/boulder/blob/f193137405a22057fe46a1e0e27f9d1c9e07de8b/grpc/errors.go
@@ -95,8 +95,8 @@ func UnWrapError(err error, md metadata.MD) error {
 	return err
 }
 
-// New returns a basic Service with all of the expected middlewares wired in.
-func NewService(logger log.Logger, ints, chars, refs, beats metrics.Counter) Service {
+// NewService returns a basic Service with all of the expected middlewares wired in.
+func NewService(logger log.Logger, metrics *Metrics) Service {
 
 	var svc Service
 	{
@@ -106,11 +106,11 @@ func NewService(logger log.Logger, ints, chars, refs, beats metrics.Counter) Ser
 			svc = LoggingMiddleware(logger)(svc)
 		}
 
-		if ints != nil && chars != nil && refs != nil && beats != nil {
-			svc = InstrumentingMiddleware(ints, chars, refs, beats)(svc)
+		if metrics != nil {
+			svc = InstrumentingMiddleware(metrics)(svc)
 		}
-
 	}
+
 	return svc
 }
 
@@ -245,4 +245,18 @@ func (s basicService) GetAvailableAgents(_ context.Context, session models.Sessi
 	}
 
 	return agentIDs, nil
+}
+
+// AddTask adds a new task to the db and returns the new task's taskid
+func (s basicService) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
+	logger.Log("level", "debug", "msg", fmt.Sprintf("Adding task with custID: %d, agentIDs: %#v", custID, agentIDs))
+
+	//  taskID, err := session.DB(db).AddTask(custID, agentIDs)
+	//
+	//  if err != nil {
+	//          logger.Log("level", "err", "msg", "Failed to add task", "err", err)
+	//          return 0, err
+	//  }
+
+	return 0, nil
 }

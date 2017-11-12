@@ -131,6 +131,20 @@ var data = []entry{
 		"heartbeat.golden",
 		"A basic test of service's HeartBeat()",
 	},
+	{
+		"addtask",
+		[]string{"1", "1,2,3"},
+		0,
+		"addtask.input",
+		"response taskID",
+		"addtask.golden",
+		"A basic test of service's AddTask()",
+	},
+	{
+		"addtask",
+		[]string{"0", "1,2,3"},
+		amerrors.ErrCustIDInvalid,
+	},
 }
 
 // runSrvTest runs a specifc test based off testName we convert to bytes for possible writing
@@ -220,7 +234,7 @@ func TestFiles(t *testing.T) {
 	}
 
 	// Create new service
-	s := service.NewService(logger, nil, nil, nil, nil)
+	s := service.NewService(logger, nil)
 
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
