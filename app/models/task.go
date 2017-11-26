@@ -4,9 +4,10 @@ package models
 // Agent Model / Mongo Calls
 
 import (
-	"time"
 	"strconv"
-		amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
+	"time"
+
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 )
 
 // Task - models for phone task note bson uses int32 a lot
@@ -25,18 +26,19 @@ func (db *MongoDatabase) AddTask(custID int32, agentIDs []int32) (int32, error) 
 		return 0, amerrors.ErrCustIDInvalidError("Invalid Cust ID: " + strconv.Itoa(int(custID)))
 	}
 
-	taskID := GetNextSequence(*db, "taskid")
-	//logger.Log("level", "debug", "msg", "Created new sequence "+strconv.Itoa(int(taskID)))
+	taskID, err := db.GetNextSequence("taskid")
+	logger.Log("level", "debug", "msg", "Created new sequence "+strconv.Itoa(int(taskID)))
 
-	err := db.C("tasks").Insert(&Task{
-		TaskID: taskID,
-		CustID: custID,
+	err = db.C("tasks").Insert(&Task{
+		TaskID:   taskID,
+		CustID:   custID,
 		AgentIDs: agentIDs,
-		AddedAt: NowFunc(),
+		AddedAt:  NowFunc(),
 	})
 
 	if err != nil {
 		return 0, err
 	}
+
 	return taskID, nil
 }

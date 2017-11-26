@@ -8,7 +8,7 @@ LOCAL_DEPLOYMENT_FILENAME=agent-mgmt-deployment.yml
 GO_MAIN=./app/main.go
 GO_PORT=50000
 
-
+TIMESTAMP=$(shell date +%s )
 #
 # Help for Makefile & Colorised Messages
 #
@@ -81,11 +81,14 @@ build:        ##@compile Builds executable cross compiled for alpine docker
 
 check:        ##@circleci Needed for running circleci tests
 	@echo "$(INFO) Running tests"
-	go test -v ./app/ ./app/models/ ./app/tests
+	# https://splice.com/blog/lesser-known-features-go-test/
+	# Running go test <package1> <package2> <package3> will run packages in parallel
+  # we dont want this because of our db access/destruction
+	# therefore we set parrallel to 1:    -p 1
+	go test -v -p 1 ./app/models ./app/service ./app
 
-preparedb:
-	go run preparedb.go
 
+# ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
 # Non docker local development (can be useful for super fast local/debugging)
@@ -95,13 +98,15 @@ run-conn:          ##@devlocal Run locally (outside docker) (but connect to mini
 	@echo "$(INFO) Running go service outside of docker ...."
 	go run ${GO_MAIN} --conn.local
 
-run-build-bin:      ##@devlocal Builds binary locally (outside docker)
+build-bin:      ##@devlocal Builds binary locally (outside docker)
 	bash -c "REPO=${REPO} GO_MAIN=${GO_MAIN} mkubectl.sh --compile"
 
 clean:
 	@rm -rf vendor/
 	@rm -f ${REPO}
 	@rm -f Gopkg.toml Gopkg.lock
+	@rm -rf _build/
+	@rm -f .testfailures .testsuccesses
 
 
 # ------------------------------------------------------------------------------
@@ -110,6 +115,10 @@ clean:
 
 run:                    ##@dev Alias for swap-hot-local
 	@make REPO=${REPO} GO_MAIN=${GO_MAIN} swap-hot-local
+
+# Tests inside docker (why needed for replica tests - outside docker you cant connect to DNS)  move
+test:                   ##@dev Run tests inside minikube
+	@bash -c "mkubectl.sh --hot-reload-test ${REPO} ${LOCAL_DEPLOYMENT_FILENAME}"
 
 swap-hot-local:         ##@dev Swaps $(REPO) deployment in minikube with hot-reloadable docker image (You must make sure you are running i.e. infra-minikube.sh --create)
 	@bash -c "mkubectl.sh --hot-reload-deployment ${REPO} ${LOCAL_DEPLOYMENT_FILENAME} ${GO_PORT}"

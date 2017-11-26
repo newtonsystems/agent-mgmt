@@ -9,17 +9,11 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-// NOTE: MixedCaps (Go public!)
 type PhoneSession struct {
 	SessID  int32  `bson:"sessid" json:"sessid"`
 	AgentID int32  `bson:"agentid" json:"agentid"`
 	RefID   string `bson:"refid" json:"refid"`
 }
-
-//	AgentID int32 `bson:"agentid" json:"agentid"` // Agent ID (make foreign key)
-//	//PhoneID int32  `bson:"phoneid" json:"phoneid"` // Phone ID (make foreign key)
-//	refID string `bson:"refid" json:"refid"` // Ref ID
-//	//LastHeartBeat time.Time `bson:"lastheartbeat" json:"lastheartbeat"`
 
 // Mongo Calls
 

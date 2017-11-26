@@ -3,11 +3,8 @@ package main_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
-	//"log"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -19,7 +16,7 @@ import (
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
-	"github.com/newtonsystems/agent-mgmt/app/tests"
+	tu "github.com/newtonsystems/agent-mgmt/app/testutil"
 	"github.com/newtonsystems/agent-mgmt/app/transport"
 	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
@@ -27,20 +24,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-
 	mgo "gopkg.in/mgo.v2"
-	//"gopkg.in/mgo.v2/bson"
 )
-
-var update = flag.Bool("update", false, "update golden files")
-var verbose = flag.Bool("verbose", false, "turn on more verbose output")
-var debug = flag.Bool("debug", false, "turn on mongo debug")
 
 var logger = utils.GetLogger()
 
 const (
-	dataDir     = "./testdata"
-	mongoDBName = "test"
+	dataDir = "./testdata"
 )
 
 // An interface so we can encode different grpc requests
@@ -224,29 +214,6 @@ var dataMockErrors = []entryQueryError{
 	},
 }
 
-// cleanUpCollection removes all items from a collection
-func cleanUpCollection(session models.Session, testName string) {
-	var i interface{}
-	var collection string
-	switch testName {
-	case "getavailableagents":
-		fallthrough
-	case "heartbeat":
-		collection = "agents"
-	case "getagentidfromref":
-		collection = "phonesessions"
-	case "addtask":
-		collection = "tasks"
-		//session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
-	}
-	session.DB(mongoDBName).C(collection).RemoveAll(i)
-}
-
-// cleanUp removes everyfrom the database including all collections
-func cleanUp(session models.Session) {
-	session.DB(mongoDBName).DropDatabase()
-}
-
 // runSrvTest runs a specifc test based off testName we convert to bytes for possible writing
 func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer *metadata.MD, testName string, testReq testRequest) ([]byte, error) {
 	var res []byte
@@ -257,7 +224,7 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 	case "getavailableagents":
 		request, ok := testReq.(*grpc_types.GetAvailableAgentsRequest)
 		if !ok {
-			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+			tu.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
 		}
 		resp, err := client.GetAvailableAgents(
 			ctx,
@@ -274,7 +241,7 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 	case "getagentidfromref":
 		request, ok := testReq.(*grpc_types.GetAgentIDFromRefRequest)
 		if !ok {
-			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+			tu.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
 		}
 		resp, err := client.GetAgentIDFromRef(
 			ctx,
@@ -282,7 +249,7 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 			grpc.Header(header),
 			grpc.Trailer(trailer),
 		)
-		if *verbose {
+		if *tu.Verbose {
 			fmt.Printf("Response: " + fmt.Sprintf("%#v", resp) + "\n")
 		}
 		// Style: this doesnt feel go like
@@ -294,7 +261,7 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 	case "heartbeat":
 		request, ok := testReq.(*grpc_types.HeartBeatRequest)
 		if !ok {
-			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+			tu.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
 		}
 		resp, err := client.HeartBeat(
 			ctx,
@@ -311,7 +278,7 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 	case "addtask":
 		request, ok := testReq.(*grpc_types.AddTaskRequest)
 		if !ok {
-			tests.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
+			tu.FailNowAt(t, "Failed to convert/decode request. This shouldnt happen ...")
 		}
 		resp, err := client.AddTask(
 			ctx,
@@ -329,58 +296,6 @@ func runSrvTest(t *testing.T, client grpc_types.AgentMgmtClient, header, trailer
 	return res, resErr
 }
 
-// Unmarshal JSON From File
-func insertFixtureToDatabase(t *testing.T, session models.Session, testName, source string, src []byte) {
-	var errMessage = "No JSON data found when unmarshalled data from " + source
-
-	switch testName {
-	case "getavailableagents":
-		fallthrough
-	case "heartbeat":
-		var agents []models.Agent
-		json.Unmarshal(src, &agents)
-
-		// Check we have found some input
-		if len(agents) == 0 {
-			tests.FailNowAt(t, errMessage)
-		}
-
-		// Insert agents into mongo
-		for _, agent := range agents {
-			if *verbose {
-				fmt.Printf("Inserting " + fmt.Sprintf("%#v", agent) + " into collection 'agents'\n")
-			}
-			err := session.DB("test").C("agents").Insert(agent)
-			if err != nil {
-				t.Error(err)
-				tests.FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", agent)+" into mongo")
-			}
-		}
-
-	case "getagentidfromref":
-		var phoneSessions []models.PhoneSession
-		json.Unmarshal(src, &phoneSessions)
-
-		// Check we have found some input
-		if len(phoneSessions) == 0 {
-			tests.FailNowAt(t, errMessage)
-		}
-
-		// Insert phonesessions into mongo
-		for _, phoneSess := range phoneSessions {
-			if *verbose {
-				fmt.Printf("Inserting " + fmt.Sprintf("%#v", phoneSess) + " into collection 'phonesessions'\n")
-			}
-			err := session.DB("test").C("phonesessions").Insert(phoneSess)
-			if err != nil {
-				t.Error(err)
-				tests.FailNowAt(t, "Could not insert "+fmt.Sprintf("%#v", phoneSess)+" into mongo")
-			}
-		}
-
-	}
-}
-
 func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session models.Session, source, golden, compare, description, testName string, testReq testRequest, testHasErr amerrors.ErrorType) {
 	// read input from file
 	src, err := ioutil.ReadFile(source)
@@ -391,7 +306,7 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 	}
 
 	// update mongo db with input data
-	insertFixtureToDatabase(t, session, testName, source, src)
+	tu.InsertFixturesToDB(t, session, testName, src)
 
 	// run service call
 	var header, trailer metadata.MD
@@ -399,24 +314,24 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 
 	// is an error is expected? If so, we check it is the correct one
 	if err != nil {
-		if *verbose {
+		if *tu.Verbose {
 			fmt.Printf("Error in response found: " + fmt.Sprintf("%#v", service.UnWrapError(err, trailer)) + "\n")
 			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(service.UnWrapError(err, trailer), testHasErr)) + "\n")
 		}
 		// If expecting an error and it is not the one we thought, fail
 		if testHasErr != 0 && !amerrors.Is(service.UnWrapError(err, trailer), testHasErr) {
 			t.Error(err)
-			tests.FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", service.UnWrapError(err, trailer)))
+			tu.FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", service.UnWrapError(err, trailer)))
 		}
 		// If not expecting an error , fail
 		if testHasErr == 0 {
 			t.Error(err)
-			tests.FailNowAt(t, "Was not expecting an error. Error: "+err.Error())
+			tu.FailNowAt(t, "Was not expecting an error. Error: "+err.Error())
 		}
 	}
 
 	// update golden files if necessary
-	if *update {
+	if *tu.Update {
 		if werr := ioutil.WriteFile(golden, res, 0644); werr != nil {
 			t.Error(err)
 		}
@@ -433,13 +348,14 @@ func checkAPICall(t *testing.T, client grpc_types.AgentMgmtClient, session model
 	}
 
 	// formatted source and golden must be the same
-	if err := tests.Diff(compare, golden, description, res, gld); err != nil {
+	if err := tu.Diff(compare, golden, description, res, gld); err != nil {
 		t.Error(err)
 		return
 	}
 }
 
 func TestGRPCServerClient(t *testing.T) {
+
 	// Freeze Time
 	service.NowFunc = func() time.Time {
 		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
@@ -448,14 +364,13 @@ func TestGRPCServerClient(t *testing.T) {
 	}
 
 	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug, true)
-	//defer moSession.Refresh()
-	//defer moSession.Close()
+	session, _ := tu.NewTestMongoConnection(*tu.Debug, *tu.OutsideConn)
+	defer tu.CleanUpTestMongoConnection(t, session)
 
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
 	var (
 		service   = service.NewService(nil, nil)
-		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, moSession, "test")
+		endpoints = amendpoint.NewEndpoint(service, nil, nil, nil, session, "test")
 	)
 
 	// gRPC server
@@ -482,31 +397,31 @@ func TestGRPCServerClient(t *testing.T) {
 
 	client := grpc_types.NewAgentMgmtClient(conn)
 
+	//
 	// Run through tests
+	//
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
 			logger.Log("msg", "TestGRPCServerClient: Running service test for "+e.testName)
-			checkAPICall(t, client, moSession, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
+			defer tu.CleanAllCollectionsTestMongo(session)
+
+			checkAPICall(t, client, session, source, golden, e.compare, e.description, e.testName, e.testReq, e.testHasErr)
 		})
-		// Clean collection without destroying counters, indexes etc.
-		cleanUpCollection(moSession, e.testName)
 	}
-	cleanUp(moSession)
 }
 
 // TestGRPCQueryError tests the server against query errors
 func TestGRPCQueryError(t *testing.T) {
 	// Initialise mongo connection
-	moSession := tests.CreateTestMongoConnection(*debug, true)
-	defer moSession.Refresh()
-	defer moSession.Close()
+	session, _ := tu.NewTestMongoConnection(*tu.Debug, *tu.OutsideConn)
+	defer tu.CleanUpTestMongoConnection(t, session)
 
 	// Create Service &  Endpoints (no logger, tracer, metrics etc)
 	// https://husobee.github.io/golang/testing/unit-test/2015/06/08/golang-unit-testing.html
 	var (
-		svc = tests.MockService{
+		svc = tu.MockService{
 			MockGetAvailableAgents: func() ([]string, error) {
 				var agentIDs []string
 				return agentIDs, &mgo.QueryError{Code: 1}
@@ -521,7 +436,7 @@ func TestGRPCQueryError(t *testing.T) {
 				return 0, &mgo.QueryError{Code: 1}
 			},
 		}
-		endpoints = amendpoint.NewEndpoint(svc, nil, nil, nil, moSession, "test")
+		endpoints = amendpoint.NewEndpoint(svc, nil, nil, nil, session, "test")
 	)
 
 	// gRPC server
@@ -565,6 +480,5 @@ func TestGRPCQueryError(t *testing.T) {
 			}
 
 		})
-		cleanUp(moSession)
 	}
 }

@@ -15,7 +15,7 @@
 
 [[projects]]
   name = "github.com/go-kit/kit"
-  packages = ["circuitbreaker","endpoint","examples/shipping/booking","examples/shipping/cargo","examples/shipping/handling","examples/shipping/inmem","examples/shipping/inspection","examples/shipping/location","examples/shipping/routing","examples/shipping/tracking","examples/shipping/voyage","log","log/term","metrics","metrics/internal/lv","metrics/prometheus","transport/grpc","transport/http"]
+  packages = ["circuitbreaker","endpoint","examples/shipping/cargo","examples/shipping/inspection","examples/shipping/location","examples/shipping/routing","examples/shipping/voyage","log","log/term","metrics","metrics/internal/lv","metrics/prometheus","transport/grpc","transport/http"]
   revision = "4dc7be5d2d12881735283bcab7352178e190fc71"
   version = "v0.6.0"
 
@@ -148,6 +148,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d9208254841f7dace01d6e18140658b29fed0a6fef16ae98274792e947489f92"
+  inputs-digest = "5504f4532a111bb0a0c71e082d9fa745609cc0f1feb81b0be2c09814b4e60c43"
   solver-name = "gps-cdcl"
   solver-version = 1

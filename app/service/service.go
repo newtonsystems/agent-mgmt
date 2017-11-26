@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	mgo "gopkg.in/mgo.v2"
 
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
@@ -182,14 +183,21 @@ func (s basicService) HeartBeat(session models.Session, db string, agentID int32
 
 	logger.Log("level", "debug", "msg", "Updating heartbeat for agent ID: "+strconv.Itoa(int(agentID)))
 
-	exists, err := session.DB(db).AgentExists(agentID)
+	// NOTE: Concurrent requests will not work otherwises
+	// Request a socket connection from the session to process our query.
+	// Close the session when the goroutine exits and put the connection back
+	// into the pool.
+	sessionCopy := session.Copy()
+	defer sessionCopy.Close()
+
+	exists, err := sessionCopy.DB(db).AgentExists(agentID)
 
 	if !exists {
 		logger.Log("level", "err", "err", err)
 		return grpc_types.HeartBeatResponse_HEARTBEAT_FAILED, err
 	}
 
-	err = session.DB(db).HeartBeat(agentID)
+	err = sessionCopy.DB(db).HeartBeat(agentID)
 
 	if err != nil {
 		logger.Log("level", "err", "msg", "Failed to update heartbeat for agent id: "+strconv.Itoa(int(agentID)), "err", err)
@@ -204,7 +212,14 @@ func (s basicService) GetAgentIDFromRef(session models.Session, db string, refID
 	// Get Agent ID from session data
 	logger.Log("level", "debug", "msg", "Getting available agent ID from ref ID: "+refID)
 
-	agentID, err := session.DB(db).GetAgentIDFromRef(refID)
+	// NOTE: Concurrent requests will not work otherwises
+	// Request a socket connection from the session to process our query.
+	// Close the session when the goroutine exits and put the connection back
+	// into the pool.
+	sessionCopy := session.Copy()
+	defer sessionCopy.Close()
+
+	agentID, err := sessionCopy.DB(db).GetAgentIDFromRef(refID)
 
 	if agentID == 0 {
 		logger.Log("level", "warn", "msg", "Failed to get agent ID from ref ID", "err", err)
@@ -228,8 +243,15 @@ func (s basicService) GetAvailableAgents(_ context.Context, session models.Sessi
 	minuteAgoDate := NowFunc().Add(-time.Minute)
 	logger.Log("level", "debug", "msg", "Getting available agents with heartbeats no older than "+minuteAgoDate.Format("01/02/2006 03:04:05"))
 
+	// NOTE: Concurrent requests will not work otherwises
+	// Request a socket connection from the session to process our query.
+	// Close the session when the goroutine exits and put the connection back
+	// into the pool.
+	sessionCopy := session.Copy()
+	defer sessionCopy.Close()
+
 	var agentIDs []string
-	agents, err := session.DB(db).GetAgents(minuteAgoDate, limit)
+	agents, err := sessionCopy.DB(db).GetAgents(minuteAgoDate, limit)
 
 	if err != nil {
 		logger.Log("level", "err", "msg", "Failed to get agents", "err", err)
@@ -251,7 +273,17 @@ func (s basicService) GetAvailableAgents(_ context.Context, session models.Sessi
 func (s basicService) AddTask(session models.Session, db string, custID int32, agentIDs []int32) (int32, error) {
 	logger.Log("level", "debug", "msg", fmt.Sprintf("Adding task with custID: %d, agentIDs: %#v", custID, agentIDs))
 
-	taskID, err := session.DB(db).AddTask(custID, agentIDs)
+	// NOTE: Concurrent requests will not work otherwises
+	// Request a socket connection from the session to process our query.
+	// Close the session when the goroutine exits and put the connection back
+	// into the pool.
+	sessionCopy := session.Copy()
+
+	sessionCopy.SetMode(mgo.Strong, false)
+
+	defer sessionCopy.Close()
+
+	taskID, err := sessionCopy.DB(db).AddTask(custID, agentIDs)
 
 	if err != nil {
 		logger.Log("level", "err", "msg", "Failed to add task", "err", err)

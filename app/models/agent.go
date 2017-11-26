@@ -36,7 +36,7 @@ type Agent struct {
 
 // Mongo Calls
 
-// HeartBeat updates LastHeartBeat with current time now
+// AgentExists check whether an agent exist based of its agent ID
 func (db *MongoDatabase) AgentExists(agentID int32) (bool, error) {
 	count, err := db.C("agents").Find(bson.M{"agentid": agentID}).Count()
 
@@ -53,9 +53,16 @@ func (db *MongoDatabase) AgentExists(agentID int32) (bool, error) {
 
 // HeartBeat updates LastHeartBeat with current time now
 func (db *MongoDatabase) HeartBeat(agentID int32) error {
+	exists, err := db.AgentExists(agentID)
+
+	if !exists {
+		logger.Log("level", "err", "err", err)
+		return err
+	}
+
 	selector := bson.M{"agentid": agentID}
 	update := bson.M{"$set": bson.M{"lastheartbeat": NowFunc()}}
-	err := db.C("agents").Update(selector, update)
+	err = db.C("agents").Update(selector, update)
 
 	return err
 }
@@ -65,9 +72,6 @@ func (db *MongoDatabase) GetAgents(timestamp time.Time, limit int32) ([]Agent, e
 	var agents []Agent
 
 	err := db.C("agents").Find(bson.M{"lastheartbeat": bson.M{"$gt": timestamp}}).Limit(int(limit)).All(&agents)
-
-	//return agents, amerrors.ErrAgentIDNotFoundError("This fhjksahfk sh sa")
-	//return agents, errors.New("This is an test error")
 
 	if err != nil {
 		return agents, err

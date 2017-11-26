@@ -1,4 +1,4 @@
-package tests
+package testutil
 
 // testing.go
 // These are export APIs for the sole purpose of providing
@@ -7,8 +7,6 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	stdlog "log"
-	"os"
 	//"fmt"
 	"io/ioutil"
 	//"os"
@@ -18,24 +16,9 @@ import (
 
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
-	"github.com/newtonsystems/agent-mgmt/app/utils"
 	"github.com/newtonsystems/grpc_types/go/grpc_types"
 	"gopkg.in/mgo.v2"
 )
-
-var logger = utils.GetLogger()
-
-const (
-	dataDir = "./testdata"
-)
-
-func envString(env, fallback string) string {
-	e := os.Getenv(env)
-	if e == "" {
-		return fallback
-	}
-	return e
-}
 
 // Service Layer Mocking -------------------------------------------------------
 
@@ -100,12 +83,19 @@ func NewMockSession() models.Session {
 
 func (fs MockSession) SetSafe(*mgo.Safe) {}
 
+func (fs MockSession) SetMode(consistency mgo.Mode, refresh bool) {}
+
 func (fs MockSession) SetSyncTimeout(time.Duration) {}
 
 func (fs MockSession) SetSocketTimeout(time.Duration) {}
 
 // Copy mocks mgo.Session.Copy().
 func (fs MockSession) Copy() models.Session {
+	return MockSession{}
+}
+
+// Clone mocks mgo.Session.Clone().
+func (fs MockSession) Clone() models.Session {
 	return MockSession{}
 }
 
@@ -211,6 +201,10 @@ func (db MockDatabase) AddTask(custID int32, agentIDs []int32) (int32, error) {
 	return 0, nil
 }
 
+func (db MockDatabase) GetNextSequence(name string) (int32, error) {
+	return 1, nil
+}
+
 //GetAgentIDFromRef mocks models.GetAgents().
 func (db MockDatabase) GetAgentIDFromRef(refID string) (int32, error) {
 	return 0, nil
@@ -224,56 +218,6 @@ func (db MockDatabase) HeartBeat(agentID int32) error {
 //DropDatabase mocks db.DropDatabase().
 func (db MockDatabase) DropDatabase() error {
 	return nil
-}
-
-// Create a real mongo connection for tests
-// set to "test" database
-func CreateTestMongoConnection(debug bool, prepare bool) models.Session {
-	// Initialise mongodb connection and logger
-	// Create a session which maintains a pool of socket connections to our MongoDB.
-	var mongoExternalHost = envString("MONGO_EXTERNAL_SERVICE_HOST", "192.168.99.100") + ":" + envString("MONGO_EXTERNAL_SERVICE_PORT", "31017")
-
-	mongoHosts := []string{
-		mongoExternalHost,
-	}
-	mongoDBDialInfo := &mgo.DialInfo{
-		Addrs:    mongoHosts,
-		Timeout:  20 * time.Second,
-		Database: "test",
-	}
-
-	if debug {
-		mgo.SetDebug(true)
-		var debugMongoLogger *stdlog.Logger
-		debugMongoLogger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
-		mgo.SetLogger(debugMongoLogger)
-	}
-
-	mongoSession, err := mgo.DialWithInfo(mongoDBDialInfo)
-
-	// Can't connect? - bail!
-	if err != nil {
-		panic(err)
-	}
-
-	// Optional. Switch the session to a monotonic behavior.
-	//mongoSession.SetMode(mgo.Monotonic, true)
-
-	// Wrap mgo session in user defined interface/structs
-	// This means we can mock db calls more easily
-	session := models.MongoSession{mongoSession}
-	session.SetSafe(&mgo.Safe{})
-	session.SetSyncTimeout(7 * time.Second)
-	session.SetSocketTimeout(10 * time.Second)
-
-	// Clear database & Prepare database
-	if prepare {
-	}
-
-	session.DB("test").DropDatabase()
-	models.PrepareDB(session, "test", logger)
-
-	return session
 }
 
 // // GetScores mocks models.GetScores().

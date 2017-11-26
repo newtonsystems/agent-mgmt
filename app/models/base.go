@@ -5,6 +5,7 @@ package models
 // gracefully ripped from: https://github.com/thylong/regexrace/blob/master/models/base.go
 
 import (
+	"fmt"
 	stdlog "log"
 	"os"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-kit/kit/log"
 
 	//"github.com/spf13/viper"
+	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -65,6 +67,7 @@ type DataLayer interface {
 	GetAgentIDFromRef(refID string) (int32, error)
 	HeartBeat(agentID int32) error
 	DropDatabase() error
+	GetNextSequence(name string) (int32, error)
 	//Remove()
 	//GetQuestion(qid int) (Question, error)
 	//GetScores() ([]Score, error)
@@ -76,8 +79,10 @@ type Session interface {
 	DB(name string) DataLayer
 	SetSafe(safe *mgo.Safe)
 	SetSyncTimeout(d time.Duration)
+	SetMode(consistency mgo.Mode, refresh bool)
 	SetSocketTimeout(d time.Duration)
 	Close()
+	Clone() Session
 	Refresh()
 	Copy() Session
 	Ping() error
@@ -97,6 +102,12 @@ func (s MongoSession) DB(name string) DataLayer {
 func (s MongoSession) Copy() Session {
 	return MongoSession{s.Session.Copy()}
 }
+
+// Clone mocks mgo.Session.Clone()
+func (s MongoSession) Clone() Session {
+	return MongoSession{s.Session.Copy()}
+}
+
 func (s MongoSession) Close() {
 	s.Session.Close()
 }
@@ -107,6 +118,10 @@ func (s MongoSession) Refresh() {
 
 func (s MongoSession) SetSocketTimeout(d time.Duration) {
 	s.Session.SetSocketTimeout(d)
+}
+
+func (s MongoSession) SetMode(consistency mgo.Mode, refresh bool) {
+	s.Session.SetMode(consistency, refresh)
 }
 
 // NewMongoSession returns a new Mongo Session.
@@ -126,7 +141,7 @@ func NewMongoSession(mongoDBDialInfo *mgo.DialInfo, logger log.Logger, debug boo
 	}
 
 	// Optional. Switch the session to a monotonic behavior.
-	mongoSession.SetMode(mgo.Monotonic, true)
+	mongoSession.SetMode(mgo.Strong, true)
 	mongoLogger.Log("msg", "successfully connected")
 
 	if debug {
@@ -153,24 +168,42 @@ type Count struct {
 }
 
 // GetNextSequence returns the next sequence for 'name'
-func GetNextSequence(db MongoDatabase, name string) int32 {
+func (db *MongoDatabase) GetNextSequence(name string) (int32, error) {
 	var doc Count
 	change := mgo.Change{
 		Update:    bson.M{"$inc": bson.M{"seq": 1}},
+		Upsert:    true,
 		ReturnNew: true,
 	}
 
-	_, err := db.C("counters").Find(bson.M{"_id": name}).Apply(change, &doc)
+	//println(name)
+	count, err := db.C("counters").Find(bson.M{"_id": name}).Count()
 
 	if err != nil {
-		panic("Creation of next sequence failed for " + name)
+		logger.Log("level", "error", "msg", "Failed in get count of sequence name: "+name)
+		return 0, err
 	}
 
-	return doc.Seq
+	if count == 0 {
+		return 0, amerrors.ErrCounterNotFoundError("failed to find an counter counters(_id=" + name + ")")
+	}
+
+	_, err = db.C("counters").Find(bson.M{"_id": name}).Apply(change, &doc)
+	//fmt.Println(doc)
+	if err != nil {
+		panic("Creation of next sequence failed for " + name + " error: " + err.Error())
+	}
+
+	return doc.Seq, nil
 }
 
 // PrepareDB ensure presence of persistent and immutable data in the DB.
 func PrepareDB(session Session, db string, logger log.Logger) {
+	sessCopy := session.Copy()
+	defer sessCopy.Close()
+
+	logger.Log("level", "info", "tag", "#beforeprepare", "msg", "stats: "+fmt.Sprintf("%#v", mgo.GetStats()))
+
 	indexes := make(map[string]mgo.Index)
 	indexes["agents"] = mgo.Index{
 		Key:        []string{"agentid"},
@@ -186,17 +219,25 @@ func PrepareDB(session Session, db string, logger log.Logger) {
 	}
 
 	for collectionName, index := range indexes {
-		err := session.DB(db).C(collectionName).EnsureIndex(index)
+		err := sessCopy.DB(db).C(collectionName).EnsureIndex(index)
 		if err != nil {
-			panic("Cannot ensure index.")
+			panic("Cannot ensure index for " + collectionName + " error: " + err.Error())
 		}
 	}
-	logger.Log("Prepared database indexes.")
+	logger.Log("level", "info", "msg", "Prepared database indexes.")
 
 	logger.Log("level", "info", "msg", "Setting up counters ...")
 	logger.Log("level", "debug", "msg", "Setting up taskid")
-	session.DB(db).C("counters").Insert(bson.M{
+
+	err := sessCopy.DB(db).C("counters").Insert(bson.M{
 		"_id": "taskid",
 		"seq": 1,
 	})
+
+	if err != nil {
+		logger.Log("level", "error", "msg", "Failed to set the taskid to its initial value")
+		panic(err)
+	}
+
+	logger.Log("level", "info", "tag", "#prepared", "msg", "stats: "+fmt.Sprintf("%#v", mgo.GetStats()))
 }

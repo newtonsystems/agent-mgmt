@@ -1,4 +1,4 @@
-package tests
+package service_test
 
 // Test service layer
 // gracefully ripped from https://github.com/hashicorp/hcl/blob/master/hcl/printer/printer_test.go
@@ -6,7 +6,6 @@ package tests
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -18,12 +17,11 @@ import (
 	amerrors "github.com/newtonsystems/agent-mgmt/app/errors"
 	"github.com/newtonsystems/agent-mgmt/app/models"
 	"github.com/newtonsystems/agent-mgmt/app/service"
-	//"gopkg.in/mgo.v2/bson"
+	tu "github.com/newtonsystems/agent-mgmt/app/testutil"
+	"github.com/newtonsystems/agent-mgmt/app/utils"
 )
 
-var update = flag.Bool("update", false, "update golden files")
-var verbose = flag.Bool("verbose", false, "turn on more verbose output")
-var debug = flag.Bool("debug", false, "update golden files")
+var logger = utils.GetLogger()
 
 type entry struct {
 	testName    string             // An identifier test name e.g. getavailableagents
@@ -36,8 +34,7 @@ type entry struct {
 }
 
 const (
-	//dataDir     = "./testdata"
-	mongoDBName = "test"
+	dataDir = "../testutil/testdata"
 )
 
 // Use go test -update to create/update the respective golden files.
@@ -165,12 +162,12 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 		if testArgs[0] != "" {
 			limitInt, errConvert := strconv.Atoi(testArgs[0])
 			if errConvert != nil {
-				FailNowAt(t, errConvert.Error())
+				tu.FailNowAt(t, errConvert.Error())
 			}
 			limit = int32(limitInt)
 		}
 
-		agentIDs, err := s.GetAvailableAgents(ctx, session, mongoDBName, limit)
+		agentIDs, err := s.GetAvailableAgents(ctx, session, tu.MongoDBName, limit)
 
 		// Style: this doesnt feel go like
 		if err == nil {
@@ -179,9 +176,9 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 		resErr = err
 
 	case "getagentidfromref":
-		agentID, err := s.GetAgentIDFromRef(session, mongoDBName, testArgs[0])
+		agentID, err := s.GetAgentIDFromRef(session, tu.MongoDBName, testArgs[0])
 
-		if *verbose {
+		if *tu.Verbose {
 			fmt.Printf("Response: " + fmt.Sprintf("%#v", agentID) + "\n")
 		}
 
@@ -192,10 +189,10 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 		agentID, errConvert := strconv.Atoi(testArgs[0])
 
 		if errConvert != nil {
-			FailNowAt(t, errConvert.Error())
+			tu.FailNowAt(t, errConvert.Error())
 		}
 
-		status, err := s.HeartBeat(session, mongoDBName, int32(agentID))
+		status, err := s.HeartBeat(session, tu.MongoDBName, int32(agentID))
 
 		res = []byte(strconv.Itoa(int(status)))
 		resErr = err
@@ -204,7 +201,7 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 		custID, errConvert := strconv.Atoi(testArgs[0])
 
 		if errConvert != nil {
-			FailNowAt(t, errConvert.Error())
+			tu.FailNowAt(t, errConvert.Error())
 		}
 
 		var agentIDs []int32
@@ -214,12 +211,12 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 			agentID, errConvert := strconv.Atoi(item)
 
 			if errConvert != nil {
-				FailNowAt(t, errConvert.Error())
+				tu.FailNowAt(t, errConvert.Error())
 			}
 			agentIDs = append(agentIDs, int32(agentID))
 		}
 
-		taskID, err := s.AddTask(session, mongoDBName, int32(custID), agentIDs)
+		taskID, err := s.AddTask(session, tu.MongoDBName, int32(custID), agentIDs)
 
 		res = []byte(strconv.Itoa(int(taskID)))
 		resErr = err
@@ -229,37 +226,12 @@ func runSrvTest(t *testing.T, session models.Session, s service.Service, testNam
 	return res, resErr
 }
 
-// cleanUp removes everyfrom the database including all collections
-func cleanUp(session models.Session) {
-	session.DB(mongoDBName).DropDatabase()
-}
-
-// cleanUpCollection removes all items from a collection
-func cleanUpCollection(session models.Session, testName string) {
-	var i interface{}
-	var collection string
-	switch testName {
-	case "getavailableagents":
-		fallthrough
-	case "heartbeat":
-		collection = "agents"
-	case "getagentidfromref":
-		collection = "phonesessions"
-	case "addtask":
-		collection = "tasks"
-	}
-
-	//session.DB(mongoDBName).C("counters").UpdateId("taskid", bson.M{"$set": bson.M{"seq": 1}})
-	session.DB(mongoDBName).C(collection).RemoveAll(i)
-}
-
-func TestFiles(t *testing.T) {
-
+func TestGoldenFiles(t *testing.T) {
 	// Initialise mongo connection
-	moSession := CreateTestMongoConnection(*debug, true)
-	defer moSession.Refresh()
-	defer moSession.Close()
+	session, _ := tu.NewTestMongoConnection(*tu.Debug, *tu.OutsideConn)
+	defer tu.CleanUpTestMongoConnection(t, session)
 
+	// Freeze time
 	service.NowFunc = func() time.Time {
 		freezeTime := time.Date(2017, time.September, 21, 17, 50, 31, 0, time.UTC)
 		logger.Log("level", "debug", "msg", "The time is "+freezeTime.Format("01/02/2006 03:04:05"))
@@ -273,58 +245,63 @@ func TestFiles(t *testing.T) {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
 		t.Run(e.source, func(t *testing.T) {
-			check(t, moSession, s, source, golden, e.compare, e.description, e.testName, e.testArgs, e.testHasErr)
+			if *tu.Verbose {
+				fmt.Printf("Running 'TestGoldenFiles': " + e.testName + " (" + e.description + ")")
+			}
+
+			defer tu.CleanAllCollectionsTestMongo(session)
+			check(t, session, s, source, golden, e.compare, e.description, e.testName, e.testArgs, e.testHasErr)
 		})
-		cleanUpCollection(moSession, e.testName)
 	}
-	cleanUp(moSession)
+
 }
 
 func check(t *testing.T, session models.Session, srv service.Service, source, golden, compare, description, testName string, testArgs []string, testHasErr amerrors.ErrorType) {
-	src, err := ioutil.ReadFile(source)
 
+	// Read file
+	src, err := ioutil.ReadFile(source)
 	if err != nil {
-		t.Error(err)
-		return
+		tu.FailNowAt(t, err.Error())
 	}
 
-	// update mongo db with input data
-	InsertFixturesToDB(t, session, testName, source, src, verbose)
+	// Update mongo db with input data
+	tu.InsertFixturesToDB(t, session, testName, src)
 
-	// run service call
+	// Run service call
 	res, err := runSrvTest(t, session, srv, testName, testArgs)
 
 	// is an error is expected? If so, we check it is the correct one
 	if err != nil {
-		if *verbose {
+		if *tu.Verbose {
 			fmt.Printf("Error in response found: " + err.Error())
 			fmt.Printf("Expected error found: " + fmt.Sprintf("%#v", amerrors.Is(err, testHasErr)))
 		}
 		if testHasErr != 0 && !amerrors.Is(err, testHasErr) {
-			FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", err))
+			tu.FailNowAt(t, "Expected error type:"+amerrors.StrName(testHasErr)+" however got: "+fmt.Sprintf("%#v", err))
 		}
 	}
 
-	// update golden files if necessary
-	if *update {
+	// Update golden files if necessary
+	if *tu.Update {
 		if werr := ioutil.WriteFile(golden, res, 0644); werr != nil {
 			t.Error(err)
 		}
 		return
 	}
 
-	// get golden
+	// Get golden file
 	gld, err := ioutil.ReadFile(golden)
-	// TODO: want to remove eol from file length (this is a crap method needs bettering)
+
+	// TODO: Want to remove eol from file length (this is a crap method needs bettering)
 	gld = bytes.Trim(gld, "\n\t")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	// formatted source and golden must be the same
-	if err := Diff(compare, golden, description, res, gld); err != nil {
-		t.Error(err)
-		return
+	// Formatted source and golden must be the same
+	if err := tu.Diff(compare, golden, description, res, gld); err != nil {
+		tu.FailNowAt(t, err.Error())
 	}
+
 }

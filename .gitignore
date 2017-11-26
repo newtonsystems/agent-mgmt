@@ -2,3 +2,6 @@ vendor/
 agent-mgmt
 Gopkg.toml
 Gopkg.lock
+.testfailures
+.testsuccesses
+_build/
