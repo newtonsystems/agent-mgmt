@@ -64,10 +64,10 @@ jobs:
             echo Failed waiting for Mongo && exit 1
 
       - run:
-          name: Run Regression Tests (send test coverage to code climate)
+          name: Run Regression Tests (send test coverage to code climate) (single mongo)
           environment:
-            MONGO_EXTERNAL_SERVICE_HOST: localhost
-            MONGO_EXTERNAL_SERVICE_PORT: 27017
+            MONGO_0_SERVICE_HOST: localhost
+            MONGO_0_PORT_HOST: 27017
           command: |
              ~/dev-utils/bin/mkubectl.sh --circleci-go-run-tests
 
