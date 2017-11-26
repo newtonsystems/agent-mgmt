@@ -10,7 +10,7 @@ jobs:
   build:
     docker:
       - image: newtonsystems/tools-docker-grpc-tools:0.2.6
-      - image: newtonsystems/tools-docker-mongo:0.1.0
+      - image: newtonsystems/tools-docker-mongo:0.1.1
     environment:
       DOCKER_PROJECT_NAME: agent-mgmt
       TEST_REPORTS: /tmp/test-reports

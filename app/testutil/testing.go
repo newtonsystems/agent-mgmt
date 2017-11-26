@@ -35,10 +35,10 @@ var Update = flag.Bool("update", false, "update golden files")
 // Verbose dfdsfgd
 var Verbose = flag.Bool("verbose", false, "turn on more verbose output")
 
-// Debug sdfhjkhgsdfj
+// Debug turns on Mongo debug
 var Debug = flag.Bool("debug", false, "update golden files")
 
-// OutsideConn dhflkjdhsfgkfdshjgk bjdhksf
+// OutsideConn connect to a remote cluster from (outside of k8s cluster)
 var OutsideConn = flag.Bool("conn.local", true, "If connecting from outside of cluster")
 
 func envString(env, fallback string) string {
@@ -203,7 +203,6 @@ func NewTestMongoConnection(debug bool, localConn bool) (tmodels.Session, tmodel
 	// Wrap mgo session in user defined interface/structs
 	// This means we can mock db calls more easily
 	session := tmodels.MongoSession{mongoSession}
-	//session.DB(MongoDBName).DropDatabase()
 
 	session.SetSafe(&mgo.Safe{WMode: "majority", J: true})
 	session.EnsureSafe(&mgo.Safe{WMode: "majority", J: true})
